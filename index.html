@@ -240,7 +240,7 @@
         .stock-holding-badge .holding-icon { font-size: 10px; }
  
         .stock-actions {
-            display: flex; gap: 8px;
+            display: flex; gap: 6px; align-items: center;
         }
         .buy-btn, .sell-btn {
             flex: 1; padding: 8px 0;
@@ -259,89 +259,16 @@
             border: 1px solid #7f1d1d;
         }
         .sell-btn:hover { background: #7f1d1d; }
- 
-        /* ─── 取引モーダル ─── */
-        .modal-overlay {
-            display: none; position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #000a; z-index: 200;
-            align-items: center; justify-content: center;
-        }
-        .modal-overlay.show { display: flex; }
-        .modal {
-            background: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 14px;
-            padding: 28px 32px;
-            width: 100%; max-width: 420px;
-            box-shadow: 0 12px 48px #000a;
-        }
-        .modal h3 {
-            font-size: 18px; margin-bottom: 20px;
-            letter-spacing: 1px;
-        }
-        .modal h3.buy-title { color: #34d399; }
-        .modal h3.sell-title { color: #f87171; }
-        .modal-info {
-            display: flex; justify-content: space-between;
-            margin-bottom: 16px; padding: 10px 14px;
-            background: #0f172a; border-radius: 8px;
-        }
-        .modal-info div { font-size: 13px; }
-        .modal-info .label { color: #6b7280; font-size: 11px; margin-bottom: 2px; }
-        .modal-info .value { color: #e0e8f0; font-weight: bold; }
-        .qty-row {
-            display: flex; align-items: center; gap: 10px;
-            margin-bottom: 16px;
-        }
-        .qty-row label { color: #9ca3af; font-size: 13px; white-space: nowrap; }
-        .qty-input {
-            flex: 1; padding: 10px 14px;
+        .inline-qty-input {
+            width: 70px; padding: 7px 4px;
             background: #0f172a; color: #e0e8f0;
-            border: 1px solid #334155; border-radius: 8px;
-            font-size: 16px; text-align: center;
+            border: 1px solid #334155; border-radius: 6px;
+            font-size: 13px; text-align: center;
+            flex-shrink: 0;
         }
-        .qty-input:focus { outline: none; border-color: #3b82f6; }
-        .qty-presets {
-            display: flex; gap: 6px; margin-bottom: 16px;
-        }
-        .qty-preset {
-            flex: 1; padding: 6px; background: #0f172a;
-            color: #9ca3af; border: 1px solid #1e293b;
-            border-radius: 6px; font-size: 12px;
-            cursor: pointer; text-align: center; transition: all 0.15s;
-        }
-        .qty-preset:hover { border-color: #3b82f6; color: #60a5fa; }
-        .modal-total {
-            text-align: center; margin-bottom: 20px;
-            font-size: 13px; color: #9ca3af;
-        }
-        .modal-total .total-val {
-            font-size: 22px; font-weight: bold;
-            color: #fbbf24; display: block; margin-top: 4px;
-        }
-        .modal-btns { display: flex; gap: 10px; }
-        .modal-cancel {
-            flex: 1; padding: 12px;
-            background: #374151; color: #9ca3af;
-            border: none; border-radius: 8px;
-            font-size: 14px; cursor: pointer;
-        }
-        .modal-cancel:hover { background: #4b5563; }
-        .modal-confirm {
-            flex: 1; padding: 12px;
-            border: none; border-radius: 8px;
-            font-size: 14px; font-weight: bold; cursor: pointer;
-            letter-spacing: 1px;
-        }
-        .modal-confirm.buy {
-            background: #065f46; color: #34d399;
-        }
-        .modal-confirm.buy:hover { background: #047857; }
-        .modal-confirm.sell {
-            background: #7f1d1d; color: #f87171;
-        }
-        .modal-confirm.sell:hover { background: #991b1b; }
+        .inline-qty-input:focus { outline: none; border-color: #3b82f6; }
+        .inline-qty-input::placeholder { color: #4b5563; font-size: 11px; }
+ 
  
         /* ─── ポートフォリオ ─── */
         .portfolio-summary {
@@ -766,11 +693,14 @@
             color: #6b7280; font-size: 13px;
         }
         .detail-trade-actions {
-            display: flex; gap: 10px; margin-top: 18px;
+            display: flex; gap: 10px; margin-top: 18px; align-items: center;
         }
         .detail-trade-actions .buy-btn,
         .detail-trade-actions .sell-btn {
             padding: 12px 0; font-size: 13px;
+        }
+        .detail-trade-actions .inline-qty-input {
+            width: 90px; padding: 10px 6px; font-size: 14px;
         }
         .click-hint {
             color: #64748b; font-size: 11px; margin-top: 8px;
@@ -1047,6 +977,7 @@
                         </div>
                         <div class="detail-trade-actions">
                             <button class="buy-btn" id="detail-buy-btn">買う</button>
+                            <input type="number" class="inline-qty-input" id="detail-qty-input" value="1" min="1" placeholder="数量" onclick="event.stopPropagation()">
                             <button class="sell-btn" id="detail-sell-btn">売る</button>
                         </div>
                     </div>
@@ -1296,44 +1227,6 @@
     </div>
 </div>
  
-<!-- 取引モーダル -->
-<div class="modal-overlay" id="trade-modal">
-    <div class="modal">
-        <h3 id="modal-title">銘柄を購入</h3>
-        
-        <div class="modal-info">
-            <div>
-                <div class="label">銘柄</div>
-                <div class="value" id="modal-stock-name">-</div>
-            </div>
-            <div>
-                <div class="label">現在値</div>
-                <div class="value" id="modal-stock-price">-</div>
-            </div>
-        </div>
- 
-        <div class="qty-row">
-            <label>数量 (株)</label>
-            <input type="number" id="modal-qty" class="qty-input" value="1" min="1" oninput="updateModalTotal()">
-        </div>
- 
-        <div class="qty-presets">
-            <div class="qty-preset" onclick="setQty(10)">10</div>
-            <div class="qty-preset" onclick="setQty(100)">100</div>
-            <div class="qty-preset" onclick="setQty(1000)">1000</div>
-            <div class="qty-preset" onclick="setQty(10000)">10000</div>
-        </div>
- 
-        <div class="modal-total">
-            概算合計 <span class="total-val" id="modal-total">¥0</span>
-        </div>
- 
-        <div class="modal-btns">
-            <button class="modal-cancel" onclick="closeModal()">キャンセル</button>
-            <button class="modal-confirm" id="modal-confirm" onclick="executeTrade()">確定</button>
-        </div>
-    </div>
-</div>
 
 <!-- イベント通知 -->
 <div class="event-notification" id="event-notification">
@@ -1454,8 +1347,6 @@ let tradeHistory   = [];
 let stockPrices    = {};
 let priceHistory   = {};
 let userCompany    = null;
-let tradeMode      = null;
-let tradeStockId   = null;
 let priceInterval  = null;
 let eventInterval  = null;
 let allStocks      = [...FAMOUS_STOCKS];
@@ -2582,6 +2473,7 @@ function renderMarket() {
             <div class="mini-chart">${buildMiniChart(hist)}</div>
             <div class="stock-actions">
                 <button class="buy-btn" data-id="${s.id}">買う</button>
+                <input type="number" class="inline-qty-input" data-id="${s.id}" value="1" min="1" placeholder="数量">
                 <button class="sell-btn" data-id="${s.id}">売る</button>
             </div>
         `;
@@ -2593,16 +2485,25 @@ function renderMarket() {
         grid.appendChild(card);
     });
  
+    grid.querySelectorAll('.inline-qty-input').forEach(input => {
+        input.addEventListener('click', (e) => e.stopPropagation());
+    });
     grid.querySelectorAll('.buy-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            openModal('buy', btn.dataset.id);
+            const stockId = btn.dataset.id;
+            const qtyInput = btn.parentElement.querySelector('.inline-qty-input');
+            const qty = parseInt(qtyInput.value) || 0;
+            executeInlineTrade('buy', stockId, qty);
         });
     });
     grid.querySelectorAll('.sell-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            openModal('sell', btn.dataset.id);
+            const stockId = btn.dataset.id;
+            const qtyInput = btn.parentElement.querySelector('.inline-qty-input');
+            const qty = parseInt(qtyInput.value) || 0;
+            executeInlineTrade('sell', stockId, qty);
         });
     });
 }
@@ -2660,8 +2561,14 @@ function renderStockDetail(stockId) {
     pnlEl.textContent = `${pnl >= 0 ? '+' : ''}¥${pnl.toLocaleString()}`;
     pnlEl.className = `value ${pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
 
-    document.getElementById('detail-buy-btn').onclick = () => openModal('buy', stockId);
-    document.getElementById('detail-sell-btn').onclick = () => openModal('sell', stockId);
+    document.getElementById('detail-buy-btn').onclick = () => {
+        const qty = parseInt(document.getElementById('detail-qty-input').value) || 0;
+        executeInlineTrade('buy', stockId, qty);
+    };
+    document.getElementById('detail-sell-btn').onclick = () => {
+        const qty = parseInt(document.getElementById('detail-qty-input').value) || 0;
+        executeInlineTrade('sell', stockId, qty);
+    };
     document.getElementById('detail-chart-area').innerHTML = buildDetailChart(hist);
 }
 
@@ -2729,82 +2636,40 @@ function updateMarketTime() {
         `更新: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
 }
  
-/* ─── 取引モーダル ─── */
-window.openModal = function(mode, stockId) {
-    tradeMode    = mode;
-    tradeStockId = stockId;
-    const stock  = allStocks.find(s => s.id === stockId);
-    if (!stock) return;
+/* ─── インライン取引実行 ─── */
+window.executeInlineTrade = async function(mode, stockId, qty) {
     const price = stockPrices[stockId];
- 
-    const titleEl   = document.getElementById('modal-title');
-    const confirmEl = document.getElementById('modal-confirm');
-    titleEl.textContent = mode === 'buy' ? `${stock.name} を購入` : `${stock.name} を売却`;
-    titleEl.className   = mode === 'buy' ? 'buy-title' : 'sell-title';
-    confirmEl.className = `modal-confirm ${mode}`;
-    confirmEl.textContent = mode === 'buy' ? '購入する' : '売却する';
- 
-    document.getElementById('modal-stock-name').textContent  = `${stock.name} (${stock.ticker})`;
-    document.getElementById('modal-stock-price').textContent = `¥${price.toLocaleString()}`;
-    document.getElementById('modal-qty').value = 1;
-    updateModalTotal();
- 
-    document.getElementById('trade-modal').classList.add('show');
-};
- 
-window.closeModal = function() {
-    document.getElementById('trade-modal').classList.remove('show');
-    tradeMode = null;
-    tradeStockId = null;
-};
- 
-window.setQty = function(n) {
-    document.getElementById('modal-qty').value = n;
-    updateModalTotal();
-};
- 
-window.updateModalTotal = function() {
-    const qty   = parseInt(document.getElementById('modal-qty').value) || 0;
-    const price = stockPrices[tradeStockId] || 0;
-    document.getElementById('modal-total').textContent = `¥${(qty * price).toLocaleString()}`;
-};
- 
-window.executeTrade = async function() {
-    const qty   = parseInt(document.getElementById('modal-qty').value);
-    const price = stockPrices[tradeStockId];
     const total = qty * price;
- 
+
     if (!qty || qty < 1) { showToast('数量を入力してください', 'error'); return; }
- 
-    if (tradeMode === 'buy') {
+
+    if (mode === 'buy') {
         if (total > balance) {
             showToast('残高が不足しています', 'error');
             return;
         }
         balance -= total;
-        if (!holdings[tradeStockId]) {
-            holdings[tradeStockId] = { qty: 0, avgCost: 0 };
+        if (!holdings[stockId]) {
+            holdings[stockId] = { qty: 0, avgCost: 0 };
         }
-        const h = holdings[tradeStockId];
+        const h = holdings[stockId];
         const totalCost = h.avgCost * h.qty + total;
         h.qty += qty;
         h.avgCost = Math.round(totalCost / h.qty);
     } else {
-        const h = holdings[tradeStockId];
+        const h = holdings[stockId];
         if (!h || h.qty < qty) {
             showToast('保有株数が不足しています', 'error');
             return;
         }
         balance += total;
         h.qty -= qty;
-        if (h.qty === 0) delete holdings[tradeStockId];
+        if (h.qty === 0) delete holdings[stockId];
     }
- 
-    const executedMode = tradeMode;
+
     await saveUserData();
     updateBalanceDisplay();
-    closeModal();
-    showToast(executedMode === 'buy' ? '購入しました' : '売却しました', 'success');
+    showToast(mode === 'buy' ? '購入しました' : '売却しました', 'success');
     updatePortfolio();
     renderMarket();
     if (selectedStockId) renderStockDetail(selectedStockId);
