@@ -1292,7 +1292,7 @@ import {
     EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import {
-    getDatabase, ref as dbRef, set, get, push, onValue, update
+    getDatabase, ref as dbRef, set, get, push, onValue, update, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
  
 const firebaseConfig = {
@@ -1349,6 +1349,10 @@ let priceHistory   = {};
 let userCompany    = null;
 let priceInterval  = null;
 let eventInterval  = null;
+let marketStateUnsubscribe = null;
+let marketLeaderInterval = null;
+let marketLeaderId = `leader_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+let isMarketLeader = false;
 let allStocks      = [...FAMOUS_STOCKS];
 let marketFilter   = 'real';
 let lastBonusDate  = null;
@@ -1356,7 +1360,9 @@ let allPlayers     = {};
 let currentUsername = '';
 let allCompanies   = [];
 let activeMultipliers = {}; // イベントによる倍率 { stockId: multiplier }
+let sharedActiveEvents = {}; // DB保存用のイベント影響 { stockId: { multiplier, expiresAt } }
 let selectedStockId = null;
+let lastSharedEventId = null;
 
 /* ─── チュートリアル状態 ─── */
 let tutorialActive = false;
@@ -1477,6 +1483,7 @@ function resetUserState() {
     lastBonusDate = null;
     currentUsername = '';
     activeMultipliers = {};
+    sharedActiveEvents = {};
     isAdmin = false;
 }
 
@@ -1538,17 +1545,17 @@ onAuthStateChanged(auth, async (user) => {
             loadFromLocalStorage();
         }
         checkLoginBonus();
-        initMarket();
-        startEventSystem();
+        await initMarket();
+        startSharedMarket();
         checkAndStartTutorial();
     } else {
+        stopSharedMarket();
         currentUser = null;
         resetUserState();
         document.getElementById('login-screen').style.display = '';
         document.getElementById('main-screen').style.display = 'none';
         document.getElementById('admin-badge').style.display = 'none';
         document.getElementById('user-name-display').textContent = '';
-        if (priceInterval) { clearInterval(priceInterval); priceInterval = null; }
         if (eventInterval) { clearTimeout(eventInterval); eventInterval = null; }
     }
 });
@@ -1877,9 +1884,10 @@ window.createCompany = async function() {
             company: newCompany,
             balance: balance
         });
+        await ensureSharedStockInMarket(newCompany);
  
         showToast('🎉 会社を設立し、上場しました！', 'success');
-        initMarket();
+        await initMarket();
         updateBalanceDisplay();
     } catch (e) {
         showToast('設立に失敗しました: ' + e.message, 'error');
@@ -1991,7 +1999,7 @@ window.addCompanyFromAdmin = async function() {
 
     const companyId = 'admin_' + Date.now();
     try {
-        await set(dbRef(db, `companies/${companyId}`), {
+        const newCompany = {
             id: companyId,
             name: name,
             ticker: ticker,
@@ -1999,14 +2007,16 @@ window.addCompanyFromAdmin = async function() {
             ownerUid: 'admin',
             ownerUsername: '管理者',
             createdAt: Date.now()
-        });
+        };
+        await set(dbRef(db, `companies/${companyId}`), newCompany);
+        await ensureSharedStockInMarket(newCompany);
 
         showToast(`✅ 企業 ${name} を追加しました`, 'success');
         document.getElementById('new-company-name').value = '';
         document.getElementById('new-company-ticker').value = '';
         document.getElementById('new-company-price').value = '';
         
-        initMarket();
+        await initMarket();
         renderCompaniesTable();
     } catch (e) {
         showToast('企業追加に失敗しました: ' + e.message, 'error');
@@ -2019,7 +2029,7 @@ window.deleteCompanyFromAdmin = async function(companyId, companyName) {
     try {
         await set(dbRef(db, `companies/${companyId}`), null);
         showToast(`✅ 企業「${companyName}」を削除しました`, 'success');
-        initMarket();
+        await initMarket();
         renderCompaniesTable();
     } catch (e) {
         showToast('企業削除に失敗しました: ' + e.message, 'error');
@@ -2324,6 +2334,243 @@ function tickPrices() {
     renderMarket();
     updatePortfolio();
     if (selectedStockId) renderStockDetail(selectedStockId);
+}
+
+function startSharedMarket() {
+    stopSharedMarket();
+
+    marketStateUnsubscribe = onValue(dbRef(db, 'market/state'), (snapshot) => {
+        const state = snapshot.val();
+        if (!state) return;
+        applySharedMarketState(state);
+    }, (e) => {
+        console.warn('Shared market listener failed:', e.message);
+        showToast('共通株価の読み込みに失敗しました', 'error');
+    });
+
+    maintainMarketLeadership();
+    marketLeaderInterval = setInterval(maintainMarketLeadership, 2000);
+}
+
+function stopSharedMarket() {
+    if (marketStateUnsubscribe) {
+        marketStateUnsubscribe();
+        marketStateUnsubscribe = null;
+    }
+    if (marketLeaderInterval) {
+        clearInterval(marketLeaderInterval);
+        marketLeaderInterval = null;
+    }
+    isMarketLeader = false;
+}
+
+async function maintainMarketLeadership() {
+    if (!currentUser || allStocks.length === 0) return;
+    const now = Date.now();
+
+    try {
+        const result = await runTransaction(dbRef(db, 'market/leader'), (leader) => {
+            if (!leader || !leader.expiresAt || leader.expiresAt < now || leader.leaderId === marketLeaderId) {
+                return {
+                    leaderId: marketLeaderId,
+                    uid: currentUser.uid,
+                    username: currentUsername || currentUser.email,
+                    expiresAt: now + 7000,
+                    updatedAt: now
+                };
+            }
+            return leader;
+        });
+
+        const leader = result.snapshot.val();
+        isMarketLeader = !!leader && leader.leaderId === marketLeaderId;
+        if (isMarketLeader) await tickSharedMarketAsLeader();
+    } catch (e) {
+        isMarketLeader = false;
+        console.warn('Market leadership failed:', e.message);
+    }
+}
+
+function buildInitialMarketState(baseState = {}) {
+    const prices = { ...(baseState.prices || {}) };
+    const history = { ...(baseState.history || {}) };
+
+    allStocks.forEach(s => {
+        if (!prices[s.id]) prices[s.id] = s.basePrice;
+        if (!Array.isArray(history[s.id]) || history[s.id].length === 0) {
+            history[s.id] = Array(40).fill(prices[s.id]).map((p, i) =>
+                i < 39 ? Math.round(p + (Math.random() - 0.5) * p * 0.02) : Math.round(p)
+            );
+        } else {
+            history[s.id] = history[s.id].slice(-60).map(v => Math.max(1, Math.round(Number(v) || prices[s.id])));
+        }
+    });
+
+    return {
+        prices,
+        history,
+        activeMultipliers: baseState.activeMultipliers || {},
+        lastEvent: baseState.lastEvent || null,
+        nextEventAt: baseState.nextEventAt || Date.now() + 30000 + Math.random() * 30000,
+        updatedAt: baseState.updatedAt || Date.now(),
+    };
+}
+
+async function tickSharedMarketAsLeader() {
+    const stateRef = dbRef(db, 'market/state');
+    const snap = await get(stateRef);
+    const now = Date.now();
+    const state = buildInitialMarketState(snap.exists() ? snap.val() : {});
+    const nextState = calculateNextMarketState(state, now);
+    await set(stateRef, nextState);
+}
+
+async function ensureSharedStockInMarket(company) {
+    if (!company || !company.id || !company.initialPrice) return;
+    const initialPrice = Math.max(1, Math.round(Number(company.initialPrice) || 1));
+
+    try {
+        await runTransaction(dbRef(db, 'market/state'), (state) => {
+            const nextState = state || {
+                prices: {},
+                history: {},
+                activeMultipliers: {},
+                lastEvent: null,
+                nextEventAt: Date.now() + 30000,
+                updatedAt: Date.now(),
+                updatedBy: 'company_seed'
+            };
+
+            nextState.prices = nextState.prices || {};
+            nextState.history = nextState.history || {};
+            if (!nextState.prices[company.id]) nextState.prices[company.id] = initialPrice;
+            if (!Array.isArray(nextState.history[company.id]) || nextState.history[company.id].length === 0) {
+                nextState.history[company.id] = Array(40).fill(initialPrice);
+            }
+            nextState.updatedAt = Date.now();
+            return nextState;
+        });
+    } catch (e) {
+        console.warn('Shared stock seed failed:', e.message);
+    }
+}
+
+function calculateNextMarketState(state, now) {
+    const prices = { ...state.prices };
+    const history = { ...state.history };
+    const activeEvents = {};
+
+    Object.entries(state.activeMultipliers || {}).forEach(([id, event]) => {
+        if (event && event.expiresAt > now) activeEvents[id] = event;
+    });
+
+    let lastEvent = state.lastEvent || null;
+    let nextEventAt = state.nextEventAt || now + 30000 + Math.random() * 30000;
+
+    if (now >= nextEventAt && allStocks.length > 0) {
+        const event = createSharedMarketEvent(now);
+        lastEvent = event.lastEvent;
+        Object.assign(activeEvents, event.activeEvents);
+        nextEventAt = now + 30000 + Math.random() * 30000;
+    }
+
+    allStocks.forEach(s => {
+        const prev = prices[s.id] || s.basePrice;
+        const volatility = s.isUserCompany ? 0.015 : 0.025;
+        const multiplier = activeEvents[s.id]?.multiplier || 1.0;
+        const baseDrift = (Math.random() - 0.498) * volatility;
+        const eventImpact = (multiplier - 1.0) * 0.1;
+        const newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact)));
+
+        prices[s.id] = newPrice;
+        const hist = Array.isArray(history[s.id]) ? history[s.id].slice(-59) : [];
+        hist.push(newPrice);
+        history[s.id] = hist;
+    });
+
+    return {
+        prices,
+        history,
+        activeMultipliers: activeEvents,
+        lastEvent,
+        nextEventAt,
+        updatedAt: now,
+        updatedBy: marketLeaderId
+    };
+}
+
+function createSharedMarketEvent(now) {
+    const targetStock = allStocks[Math.floor(Math.random() * allStocks.length)];
+    const template = EVENT_TEMPLATES[Math.floor(Math.random() * EVENT_TEMPLATES.length)];
+    let body = template.body.replace("[PRODUCT]", PRODUCTS[Math.floor(Math.random() * PRODUCTS.length)]);
+    body = `${targetStock.name} ${body}`;
+
+    const expiresAt = now + 15000;
+    const activeEvents = {
+        [targetStock.id]: { multiplier: template.impact, expiresAt }
+    };
+
+    allStocks.forEach(s => {
+        if (s.id !== targetStock.id && s.sector === targetStock.sector) {
+            activeEvents[s.id] = {
+                multiplier: 1.0 + (template.impact - 1.0) * 0.4,
+                expiresAt
+            };
+        }
+    });
+
+    return {
+        activeEvents,
+        lastEvent: {
+            id: `event_${now}_${targetStock.id}`,
+            title: template.title,
+            body,
+            type: template.type,
+            targetId: targetStock.id,
+            targetName: targetStock.name,
+            createdAt: now,
+            expiresAt
+        }
+    };
+}
+
+function applySharedMarketState(state) {
+    stockPrices = state.prices || {};
+    priceHistory = state.history || {};
+    sharedActiveEvents = state.activeMultipliers || {};
+    activeMultipliers = {};
+
+    const now = Date.now();
+    Object.entries(sharedActiveEvents).forEach(([id, event]) => {
+        if (event && event.expiresAt > now) activeMultipliers[id] = event.multiplier;
+    });
+
+    if (state.lastEvent && state.lastEvent.id !== lastSharedEventId) {
+        lastSharedEventId = state.lastEvent.id;
+        if (state.lastEvent.createdAt && now - state.lastEvent.createdAt < 20000) {
+            showEventNotification(
+                state.lastEvent.title,
+                state.lastEvent.body,
+                state.lastEvent.type,
+                { name: state.lastEvent.targetName }
+            );
+        }
+    }
+
+    renderMarket();
+    updatePortfolio();
+    if (selectedStockId) renderStockDetail(selectedStockId);
+    updateCompanyStatus();
+}
+
+function updateCompanyStatus() {
+    if (!userCompany) return;
+    const companyInfo = document.getElementById('company-info');
+    if (!companyInfo) return;
+    companyInfo.innerHTML =
+        `<strong>${userCompany.name}</strong>（${userCompany.ticker}）<br>` +
+        `初期株価: ¥${userCompany.initialPrice.toLocaleString()}<br>` +
+        `現在の株価: ¥${(stockPrices[userCompany.id] || userCompany.initialPrice).toLocaleString()}`;
 }
 
 /* ─── イベントシステム ─── */
@@ -2753,7 +3000,6 @@ function showToast(msg, type) {
 
 /* ─── 初期化 ─── */
 setInterval(updateMarketTime, 1000);
-priceInterval = setInterval(tickPrices, 2000);
 setInterval(checkForWarnings, 5000);
 
 /* ─── チュートリアル関数 ─── */
