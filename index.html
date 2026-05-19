@@ -338,6 +338,82 @@
         .company-form .hint {
             color: #4b5563; font-size: 11px; margin-top: 4px;
         }
+        .company-dashboard {
+            display: grid;
+            gap: 16px;
+        }
+        .company-hero {
+            display: flex; justify-content: space-between; gap: 16px;
+            padding-bottom: 16px; border-bottom: 1px solid #1e293b;
+        }
+        .company-hero-title { font-size: 20px; font-weight: bold; color: #e0e8f0; }
+        .company-hero-meta { color: #94a3b8; font-size: 12px; margin-top: 4px; }
+        .company-title-badge {
+            display: inline-block; margin-top: 8px; padding: 4px 10px;
+            background: #312e81; color: #c7d2fe; border: 1px solid #4338ca;
+            border-radius: 999px; font-size: 11px; font-weight: bold;
+        }
+        .company-price-box { text-align: right; }
+        .company-price-box .label { color: #64748b; font-size: 11px; }
+        .company-price-box .price { color: #fbbf24; font-size: 24px; font-weight: bold; }
+        .company-stat-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 10px;
+        }
+        .company-stat-card {
+            background: #0f172a; border: 1px solid #1e293b;
+            border-radius: 8px; padding: 12px;
+        }
+        .company-stat-card .label { color: #64748b; font-size: 11px; margin-bottom: 6px; }
+        .company-stat-card .value { color: #e0e8f0; font-size: 18px; font-weight: bold; }
+        .company-section-title {
+            color: #93c5fd; font-size: 13px; font-weight: bold;
+            letter-spacing: 1px; margin: 4px 0 10px;
+        }
+        .company-action-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 10px;
+        }
+        .company-action-card {
+            background: #0f172a; border: 1px solid #243044;
+            border-radius: 10px; padding: 12px; min-height: 142px;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .company-action-card h4 { color: #e0e8f0; font-size: 13px; }
+        .company-action-card p { color: #94a3b8; font-size: 11px; line-height: 1.5; flex: 1; }
+        .company-action-card .cost { color: #fbbf24; font-size: 11px; }
+        .company-action-card button {
+            padding: 8px 10px; border: 1px solid #2563eb; border-radius: 6px;
+            background: #1e3a5f; color: #bfdbfe; font-size: 12px;
+            font-weight: bold; cursor: pointer;
+        }
+        .company-action-card button:hover { background: #2d5a8f; }
+        .company-action-card button:disabled {
+            background: #374151; border-color: #475569; color: #6b7280; cursor: not-allowed;
+        }
+        .company-action-card.danger button {
+            background: #7f1d1d; border-color: #991b1b; color: #fecaca;
+        }
+        .company-action-card.danger button:hover { background: #991b1b; }
+        .company-history-list, .takeover-list {
+            display: grid; gap: 8px;
+        }
+        .company-history-item, .takeover-row {
+            background: #0f172a; border: 1px solid #1e293b;
+            border-radius: 8px; padding: 10px 12px; color: #cbd5e1;
+            font-size: 12px;
+        }
+        .takeover-row {
+            display: flex; justify-content: space-between; gap: 10px; align-items: center;
+        }
+        .takeover-row .target-name { color: #e0e8f0; font-weight: bold; }
+        .takeover-row .target-meta { color: #64748b; font-size: 11px; margin-top: 2px; }
+        .takeover-row button {
+            padding: 7px 10px; border-radius: 6px; border: 1px solid #991b1b;
+            background: #450a0a; color: #fecaca; cursor: pointer;
+            font-size: 11px; font-weight: bold; flex-shrink: 0;
+        }
+        .takeover-row button:hover { background: #7f1d1d; }
         .create-company-btn {
             width: 100%; padding: 14px;
             background: linear-gradient(135deg, #3b82f6, #2563eb);
@@ -1364,6 +1440,86 @@ let sharedActiveEvents = {}; // DB保存用のイベント影響 { stockId: { mu
 let selectedStockId = null;
 let lastSharedEventId = null;
 
+const COMPANY_STAT_MAX = 20;
+const COMPANY_ACTION_COOLDOWN = 5 * 60 * 1000;
+
+const COMPANY_CULTURES = {
+    challenger: { label: '勝負師', desc: '大成功も大失敗も起こりやすい' },
+    tech: { label: '技術者集団', desc: '新商品と大型開発に強い' },
+    steady: { label: '堅実経営', desc: '信頼と財務が伸びやすい' },
+    charisma: { label: 'カリスマ企業', desc: 'ブランドと注目度が伸びやすい' },
+};
+
+const COMPANY_ACTIONS = {
+    product: {
+        title: '新商品を発表',
+        cost: 150000,
+        desc: '技術力で勝負。成功すれば市場が一気にざわつく。',
+        getRate: s => 40 + s.technology * 2 + s.morale + s.brand * 0.5,
+        successMultiplier: 1.15,
+        failMultiplier: 0.93,
+        successText: '新商品発表が市場で高評価。成長期待が急上昇しています。',
+        failText: '新商品発表が期待外れとの評価。失望売りが出ています。',
+        successStats: { technology: 1, brand: 1, attention: 1 },
+        failStats: { trust: -1, attention: 1 },
+    },
+    ads: {
+        title: '広告キャンペーン',
+        cost: 80000,
+        desc: '知名度を取りにいく。短期の注目を作りやすい。',
+        getRate: s => 55 + s.brand * 2 + s.attention,
+        successMultiplier: 1.09,
+        failMultiplier: 0.98,
+        successText: '広告キャンペーンが話題化。個人投資家の注目を集めています。',
+        failText: '広告キャンペーンは伸び悩み。市場の反応は限定的です。',
+        successStats: { brand: 1, attention: 2 },
+        failStats: { finance: -1 },
+    },
+    quality: {
+        title: '品質改革',
+        cost: 90000,
+        desc: '派手さはないが、悪材料に強い会社へ育てる。',
+        getRate: s => 70 + s.trust,
+        successMultiplier: 1.03,
+        failMultiplier: 1.00,
+        successText: '品質改革を発表。長期投資家から信頼回復の動きが出ています。',
+        failText: '品質改革はまだ評価待ち。株価への影響は限定的です。',
+        successStats: { trust: 2, morale: 1 },
+        failStats: {},
+    },
+    costcut: {
+        title: 'コスト削減',
+        cost: 50000,
+        desc: '財務は改善するが、やりすぎると社内の熱が冷める。',
+        getRate: s => 75 + s.finance,
+        successMultiplier: 1.04,
+        failMultiplier: 0.96,
+        successText: 'コスト削減策を発表。収益改善への期待が広がっています。',
+        failText: 'コスト削減への不安が広がり、社内士気への懸念が出ています。',
+        successStats: { finance: 2, morale: -1 },
+        failStats: { trust: -1, morale: -1 },
+    },
+    earnings: {
+        title: '強気の決算発表',
+        cost: 0,
+        desc: '無料だがハイリスク。成功すれば大きく跳ねる。',
+        getRate: s => 35 + s.finance * 2 + s.trust + s.attention,
+        successMultiplier: 1.2,
+        failMultiplier: 0.84,
+        successText: '強気の決算発表が的中。市場予想を上回る勢いです。',
+        failText: '強気の決算発表が裏目に。市場では失望売りが広がっています。',
+        successStats: { finance: 1, brand: 1, attention: 2 },
+        failStats: { trust: -2, brand: -1 },
+    },
+    secret: {
+        title: '大型プロジェクト開始',
+        cost: 300000,
+        desc: '数分後に成否判定。成功すれば自社の看板イベントになる。',
+        project: true,
+        getRate: s => 35 + s.technology * 2 + s.morale * 1.5 + s.finance,
+    },
+};
+
 /* ─── チュートリアル状態 ─── */
 let tutorialActive = false;
 let tutorialCurrentStep = 0;
@@ -1586,7 +1742,7 @@ function loadFromLocalStorage() {
             tradeHistory = data.history ?? [];
             lastBonusDate = data.lastBonusDate || null;
             currentUsername = data.username || '';
-            if (data.company) userCompany = data.company;
+            if (data.company) userCompany = normalizeCompany(data.company);
         } catch { /* corrupt data, use defaults */ }
     }
     updateBalanceDisplay();
@@ -1604,7 +1760,7 @@ async function loadUserData() {
         tradeHistory = data.history ? Object.values(data.history) : [];
         lastBonusDate = data.lastBonusDate || null;
         currentUsername = data.username || '';
-        if (data.company) userCompany = data.company;
+        if (data.company) userCompany = normalizeCompany(data.company);
     }
     updateBalanceDisplay();
     updateUsernameDisplay();
@@ -1849,6 +2005,320 @@ window.backToMainTabs = function() {
     showGameTab('market');
 };
 
+function createDefaultCompanyStats() {
+    return {
+        technology: 1,
+        brand: 1,
+        trust: 1,
+        finance: 1,
+        morale: 1,
+        attention: 1,
+        shareholderLove: 0,
+        culture: 'challenger',
+        title: '',
+        lastActionAt: 0,
+    };
+}
+
+function normalizeCompany(company) {
+    if (!company) return company;
+    const stats = { ...createDefaultCompanyStats(), ...(company.companyStats || {}) };
+    return {
+        ...company,
+        companyStats: clampCompanyStats(stats),
+        companyEffects: company.companyEffects || {},
+        companyProjects: company.companyProjects || {},
+        actionHistory: Array.isArray(company.actionHistory) ? company.actionHistory.slice(-10) : [],
+        absorbedCompanies: Array.isArray(company.absorbedCompanies) ? company.absorbedCompanies : [],
+    };
+}
+
+function clampCompanyStats(stats) {
+    const next = { ...stats };
+    ['technology', 'brand', 'trust', 'finance', 'morale', 'attention'].forEach(key => {
+        next[key] = Math.max(0, Math.min(COMPANY_STAT_MAX, Math.round(Number(next[key]) || 0)));
+    });
+    next.shareholderLove = Math.max(0, Math.round(Number(next.shareholderLove) || 0));
+    next.lastActionAt = Number(next.lastActionAt) || 0;
+    next.culture = next.culture || 'challenger';
+    next.title = next.title || '';
+    return next;
+}
+
+function applyStatDelta(stats, delta = {}) {
+    const next = { ...stats };
+    Object.entries(delta).forEach(([key, value]) => {
+        next[key] = (Number(next[key]) || 0) + value;
+    });
+    return clampCompanyStats(next);
+}
+
+function getSuccessRate(action, stats) {
+    let rate = action.getRate ? action.getRate(stats) : 60;
+    if (stats.culture === 'challenger') rate += action.project ? 5 : 2;
+    if (stats.culture === 'tech' && (action === COMPANY_ACTIONS.product || action.project)) rate += 8;
+    if (stats.culture === 'steady' && action === COMPANY_ACTIONS.quality) rate += 8;
+    if (stats.culture === 'charisma' && action === COMPANY_ACTIONS.ads) rate += 8;
+    return Math.max(10, Math.min(90, Math.round(rate)));
+}
+
+function formatYen(value) {
+    return `¥${Math.round(value).toLocaleString()}`;
+}
+
+function getCompanyTitle(company) {
+    const stats = company.companyStats || createDefaultCompanyStats();
+    const absorbed = company.absorbedCompanies?.length || 0;
+    if (absorbed >= 3) return '企業買収王';
+    if (stats.technology >= 15) return '革新企業';
+    if (stats.trust >= 15) return '鉄壁企業';
+    if (stats.shareholderLove >= 20) return '市場の人気者';
+    if (stats.attention >= 15) return '話題の中心';
+    return stats.title || '新興上場企業';
+}
+
+async function persistUserCompany(extraUpdates = {}) {
+    if (!currentUser || !userCompany) return;
+    userCompany = normalizeCompany({ ...userCompany, ...extraUpdates });
+    await update(dbRef(db, `companies/${userCompany.id}`), userCompany);
+    await update(dbRef(db, `stock_users/${currentUser.uid}`), {
+        company: userCompany,
+        balance
+    });
+    saveToLocalStorage();
+}
+
+function pushCompanyHistory(message, type = 'info') {
+    if (!userCompany) return;
+    const history = Array.isArray(userCompany.actionHistory) ? userCompany.actionHistory.slice(-9) : [];
+    history.push({ message, type, at: Date.now() });
+    userCompany.actionHistory = history;
+}
+
+async function applyCompanyMarketImpact({ title, body, type, multiplier, duration = 45000, targetId }) {
+    const now = Date.now();
+    const stockId = targetId || userCompany?.id;
+    if (!stockId) return;
+
+    await runTransaction(dbRef(db, 'market/state'), (state) => {
+        const nextState = state || {
+            prices: {},
+            history: {},
+            activeMultipliers: {},
+            lastEvent: null,
+            nextEventAt: now + 30000,
+            updatedAt: now,
+            updatedBy: 'company_action'
+        };
+        nextState.activeMultipliers = nextState.activeMultipliers || {};
+        nextState.activeMultipliers[stockId] = {
+            multiplier,
+            expiresAt: now + duration
+        };
+        nextState.lastEvent = {
+            id: `company_${now}_${stockId}`,
+            title,
+            body,
+            type,
+            targetId: stockId,
+            targetName: userCompany?.name || 'プレイヤー企業',
+            createdAt: now,
+            expiresAt: now + duration
+        };
+        nextState.updatedAt = now;
+        return nextState;
+    });
+}
+
+window.performCompanyAction = async function(actionId) {
+    if (!userCompany) return;
+    const action = COMPANY_ACTIONS[actionId];
+    if (!action) return;
+
+    userCompany = normalizeCompany(userCompany);
+    const now = Date.now();
+    const stats = userCompany.companyStats;
+    if (now - stats.lastActionAt < COMPANY_ACTION_COOLDOWN) {
+        const remain = Math.ceil((COMPANY_ACTION_COOLDOWN - (now - stats.lastActionAt)) / 1000);
+        showToast(`次の社長アクションまで${Math.ceil(remain / 60)}分です`, 'error');
+        return;
+    }
+    if (balance < action.cost) {
+        showToast('資金が不足しています', 'error');
+        return;
+    }
+    if (action.project && userCompany.companyProjects?.active) {
+        showToast('既に大型プロジェクトが進行中です', 'error');
+        return;
+    }
+
+    balance -= action.cost;
+    stats.lastActionAt = now;
+
+    if (action.project) {
+        const rate = getSuccessRate(action, stats);
+        userCompany.companyProjects = {
+            active: {
+                type: actionId,
+                title: '秘密の大型プロジェクト',
+                startedAt: now,
+                finishAt: now + 5 * 60 * 1000,
+                successRate: rate
+            }
+        };
+        pushCompanyHistory(`大型プロジェクトを開始しました（成功率${rate}%）`, 'project');
+        await persistUserCompany();
+        await applyCompanyMarketImpact({
+            title: '大型プロジェクト始動',
+            body: `${userCompany.name} が秘密の大型プロジェクトを開始。市場では期待と警戒が入り混じっています。`,
+            type: 'up',
+            multiplier: 1.05,
+            duration: 30000
+        });
+        updateBalanceDisplay();
+        updateCompanyStatus();
+        showToast('大型プロジェクトを開始しました', 'success');
+        return;
+    }
+
+    const rate = getSuccessRate(action, stats);
+    const success = Math.random() * 100 < rate;
+    userCompany.companyStats = applyStatDelta(stats, success ? action.successStats : action.failStats);
+    const title = success ? `${action.title} 成功` : `${action.title} 失敗`;
+    const body = `${userCompany.name} ${success ? action.successText : action.failText}`;
+    pushCompanyHistory(`${action.title}: ${success ? '成功' : '失敗'}（成功率${rate}%）`, success ? 'success' : 'fail');
+    await persistUserCompany();
+    await applyCompanyMarketImpact({
+        title,
+        body,
+        type: success ? 'up' : 'down',
+        multiplier: success ? action.successMultiplier : action.failMultiplier,
+        duration: 45000
+    });
+    updateBalanceDisplay();
+    updateCompanyStatus();
+    showToast(success ? '社長アクション成功！' : '社長アクション失敗...', success ? 'success' : 'error');
+};
+
+window.resolveCompanyProject = async function() {
+    if (!userCompany?.companyProjects?.active) return;
+    const project = userCompany.companyProjects.active;
+    const now = Date.now();
+    if (now < project.finishAt) {
+        showToast('プロジェクトはまだ進行中です', 'info');
+        return;
+    }
+
+    const success = Math.random() * 100 < project.successRate;
+    userCompany = normalizeCompany(userCompany);
+    userCompany.companyStats = applyStatDelta(userCompany.companyStats, success
+        ? { technology: 3, brand: 2, attention: 3, morale: 2 }
+        : { finance: -2, trust: -1, morale: -1, attention: 1 });
+    userCompany.companyProjects = {};
+    pushCompanyHistory(`大型プロジェクト: ${success ? '大成功' : '失敗'}（成功率${project.successRate}%）`, success ? 'success' : 'fail');
+    await persistUserCompany();
+    await applyCompanyMarketImpact({
+        title: success ? '大型プロジェクト成功' : '大型プロジェクト失敗',
+        body: success
+            ? `${userCompany.name} の大型プロジェクトが成功。市場は次世代企業として再評価しています。`
+            : `${userCompany.name} の大型プロジェクトが失敗。期待先行だった市場に失望が広がっています。`,
+        type: success ? 'up' : 'down',
+        multiplier: success ? 1.25 : 0.82,
+        duration: 60000
+    });
+    updateCompanyStatus();
+    showToast(success ? '大型プロジェクト大成功！' : '大型プロジェクト失敗', success ? 'success' : 'error');
+};
+
+window.changeCompanyCulture = async function(culture) {
+    if (!userCompany || !COMPANY_CULTURES[culture]) return;
+    userCompany = normalizeCompany(userCompany);
+    userCompany.companyStats.culture = culture;
+    pushCompanyHistory(`社風を「${COMPANY_CULTURES[culture].label}」に変更しました`, 'info');
+    await persistUserCompany();
+    updateCompanyStatus();
+    showToast('社風を変更しました', 'success');
+};
+
+window.hostileTakeover = async function(targetId) {
+    if (!userCompany || !targetId) return;
+    const targetStock = allStocks.find(s => s.id === targetId);
+    if (!targetStock || !targetStock.isUserCompany || targetStock.ownerUid === currentUser.uid || targetStock.ownerUid === 'admin') {
+        showToast('買収できない企業です', 'error');
+        return;
+    }
+    const targetPrice = stockPrices[targetId] || targetStock.basePrice;
+    const cost = Math.max(500000, targetPrice * 80);
+    if (balance < cost) {
+        showToast(`買収資金が不足しています（必要: ${formatYen(cost)}）`, 'error');
+        return;
+    }
+    if (!confirm(`敵対的M&Aを仕掛けますか？\n対象: ${targetStock.name}\n費用: ${formatYen(cost)}\n成功すると相手企業を吸収し、市場から消えます。`)) return;
+
+    userCompany = normalizeCompany(userCompany);
+    const stats = userCompany.companyStats;
+    const targetDefense = 25 + (targetStock.companyStats?.trust || 1) * 3 + Math.min(25, Math.round(targetPrice / 1000));
+    const attack = 35 + stats.finance * 3 + stats.brand + stats.attention;
+    const rate = Math.max(15, Math.min(85, attack - targetDefense + 45));
+    const success = Math.random() * 100 < rate;
+
+    balance -= cost;
+    if (success) {
+        userCompany.companyStats = applyStatDelta(stats, { finance: 1, brand: 1, attention: 2 });
+        userCompany.absorbedCompanies = [
+            ...(userCompany.absorbedCompanies || []),
+            {
+                id: targetStock.id,
+                name: targetStock.name,
+                ticker: targetStock.ticker,
+                ownerUsername: targetStock.ownerUsername || targetStock.ownerEmail || '他プレイヤー',
+                absorbedAt: Date.now()
+            }
+        ].slice(-10);
+        pushCompanyHistory(`${targetStock.name} を敵対的M&Aで吸収しました`, 'success');
+        await set(dbRef(db, `companies/${targetId}`), null);
+        if (targetStock.ownerUid) {
+            const ownerSnap = await get(dbRef(db, `stock_users/${targetStock.ownerUid}/company`));
+            if (ownerSnap.exists() && ownerSnap.val()?.id === targetId) {
+                await set(dbRef(db, `stock_users/${targetStock.ownerUid}/company`), null);
+            }
+        }
+        await runTransaction(dbRef(db, 'market/state'), (state) => {
+            if (!state) return state;
+            if (state.prices) delete state.prices[targetId];
+            if (state.history) delete state.history[targetId];
+            if (state.activeMultipliers) delete state.activeMultipliers[targetId];
+            state.updatedAt = Date.now();
+            return state;
+        });
+        await persistUserCompany();
+        await applyCompanyMarketImpact({
+            title: '敵対的M&A成立',
+            body: `${userCompany.name} が ${targetStock.name} を敵対的M&Aで吸収。市場に衝撃が走っています。`,
+            type: 'up',
+            multiplier: 1.18,
+            duration: 60000
+        });
+        showToast('敵対的M&Aに成功しました', 'success');
+    } else {
+        userCompany.companyStats = applyStatDelta(stats, { finance: -1, trust: -1, attention: 1 });
+        pushCompanyHistory(`${targetStock.name} への敵対的M&Aに失敗しました`, 'fail');
+        await persistUserCompany();
+        await applyCompanyMarketImpact({
+            title: '敵対的M&A失敗',
+            body: `${userCompany.name} による ${targetStock.name} への買収工作は失敗。市場では経営判断に疑問の声が出ています。`,
+            type: 'down',
+            multiplier: 0.88,
+            duration: 60000
+        });
+        showToast('敵対的M&Aに失敗しました', 'error');
+    }
+
+    updateBalanceDisplay();
+    await initMarket();
+    updateCompanyStatus();
+};
+
 /* ─── 会社設立 ─── */
 window.createCompany = async function() {
     const name   = document.getElementById('company-name').value.trim();
@@ -1871,6 +2341,11 @@ window.createCompany = async function() {
         ownerUid: currentUser.uid,
         ownerEmail: currentUser.email,
         ownerUsername: currentUsername,
+        companyStats: createDefaultCompanyStats(),
+        companyEffects: {},
+        companyProjects: {},
+        actionHistory: [],
+        absorbedCompanies: [],
         createdAt: Date.now()
     };
  
@@ -2006,6 +2481,11 @@ window.addCompanyFromAdmin = async function() {
             initialPrice: price,
             ownerUid: 'admin',
             ownerUsername: '管理者',
+            companyStats: createDefaultCompanyStats(),
+            companyEffects: {},
+            companyProjects: {},
+            actionHistory: [],
+            absorbedCompanies: [],
             createdAt: Date.now()
         };
         await set(dbRef(db, `companies/${companyId}`), newCompany);
@@ -2265,7 +2745,9 @@ async function loadPublicCompanies() {
     try {
         const snap = await get(dbRef(db, 'companies'));
         if (snap.exists()) {
-            Object.entries(snap.val()).forEach(([id, c]) => {
+            allCompanies = Object.values(snap.val()).map(normalizeCompany);
+            Object.entries(snap.val()).forEach(([id, rawCompany]) => {
+                const c = normalizeCompany(rawCompany);
                 if (!existingIds.has(c.id)) {
                     const isOwn = userCompany && c.id === userCompany.id;
                     const ownerLabel = c.ownerUsername || (c.ownerEmail ? c.ownerEmail.split('@')[0] : '他プレイヤー');
@@ -2279,6 +2761,10 @@ async function loadPublicCompanies() {
                         ownerUid: c.ownerUid,
                         ownerEmail: c.ownerEmail || null,
                         ownerUsername: c.ownerUsername || null,
+                        companyStats: c.companyStats || createDefaultCompanyStats(),
+                        companyEffects: c.companyEffects || {},
+                        companyProjects: c.companyProjects || {},
+                        absorbedCompanies: c.absorbedCompanies || [],
                     });
                     if (!stockPrices[c.id]) {
                         stockPrices[c.id] = c.initialPrice;
@@ -2295,12 +2781,10 @@ async function loadPublicCompanies() {
     }
 
     if (userCompany) {
+        userCompany = normalizeCompany(userCompany);
         document.getElementById('company-form').style.display = 'none';
         document.getElementById('company-status').style.display = 'block';
-        document.getElementById('company-info').innerHTML =
-            `<strong>${userCompany.name}</strong>（${userCompany.ticker}）<br>` +
-            `初期株価: ¥${userCompany.initialPrice.toLocaleString()}<br>` +
-            `現在の株価: ¥${(stockPrices[userCompany.id] || userCompany.initialPrice).toLocaleString()}`;
+        updateCompanyStatus();
     } else {
         document.getElementById('company-form').style.display = '';
         document.getElementById('company-status').style.display = 'none';
@@ -2478,9 +2962,16 @@ function calculateNextMarketState(state, now) {
         const prev = prices[s.id] || s.basePrice;
         const volatility = s.isUserCompany ? 0.015 : 0.025;
         const multiplier = activeEvents[s.id]?.multiplier || 1.0;
+        const stats = s.companyStats || {};
+        const statDrift = s.isUserCompany
+            ? ((stats.technology || 0) * 0.00005) + ((stats.brand || 0) * 0.00003) + ((stats.trust || 0) * 0.00002)
+            : 0;
+        const stabilityGuard = s.isUserCompany && multiplier < 1
+            ? Math.min(0.04, (stats.trust || 0) * 0.002)
+            : 0;
         const baseDrift = (Math.random() - 0.498) * volatility;
-        const eventImpact = (multiplier - 1.0) * 0.1;
-        const newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact)));
+        const eventImpact = (multiplier - 1.0 + stabilityGuard) * 0.1;
+        const newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift)));
 
         prices[s.id] = newPrice;
         const hist = Array.isArray(history[s.id]) ? history[s.id].slice(-59) : [];
@@ -2567,10 +3058,137 @@ function updateCompanyStatus() {
     if (!userCompany) return;
     const companyInfo = document.getElementById('company-info');
     if (!companyInfo) return;
-    companyInfo.innerHTML =
-        `<strong>${userCompany.name}</strong>（${userCompany.ticker}）<br>` +
-        `初期株価: ¥${userCompany.initialPrice.toLocaleString()}<br>` +
-        `現在の株価: ¥${(stockPrices[userCompany.id] || userCompany.initialPrice).toLocaleString()}`;
+    userCompany = normalizeCompany(userCompany);
+    const stats = userCompany.companyStats;
+    const price = stockPrices[userCompany.id] || userCompany.initialPrice;
+    const cooldownLeft = Math.max(0, COMPANY_ACTION_COOLDOWN - (Date.now() - stats.lastActionAt));
+    const cooldownText = cooldownLeft > 0 ? `あと${Math.ceil(cooldownLeft / 60000)}分` : '実行可能';
+    const project = userCompany.companyProjects?.active;
+    const projectHtml = project ? `
+        <div class="company-action-card">
+            <h4>${project.title}</h4>
+            <p>成功率 ${project.successRate}% / ${Date.now() >= project.finishAt ? '完了判定できます' : `残り${Math.ceil((project.finishAt - Date.now()) / 60000)}分`}</p>
+            <button onclick="resolveCompanyProject()">完了判定</button>
+        </div>
+    ` : `
+        <div class="company-action-card">
+            <h4>大型プロジェクトなし</h4>
+            <p>「大型プロジェクト開始」から、会社の看板イベントを仕掛けられます。</p>
+            <button disabled>待機中</button>
+        </div>
+    `;
+
+    const statCards = [
+        ['technology', '技術力'],
+        ['brand', 'ブランド'],
+        ['trust', '信頼'],
+        ['finance', '財務'],
+        ['morale', '社員熱量'],
+        ['attention', '注目度'],
+        ['shareholderLove', '株主人気'],
+    ].map(([key, label]) => `
+        <div class="company-stat-card">
+            <div class="label">${label}</div>
+            <div class="value">${stats[key] || 0}</div>
+        </div>
+    `).join('');
+
+    const actionsHtml = Object.entries(COMPANY_ACTIONS).map(([id, action]) => {
+        const rate = getSuccessRate(action, stats);
+        const disabled = cooldownLeft > 0 || balance < action.cost || (action.project && project);
+        return `
+            <div class="company-action-card ${id === 'earnings' || id === 'secret' ? 'danger' : ''}">
+                <h4>${action.title}</h4>
+                <p>${action.desc}<br>成功率: ${rate}%</p>
+                <div class="cost">費用: ${formatYen(action.cost)}</div>
+                <button onclick="performCompanyAction('${id}')" ${disabled ? 'disabled' : ''}>実行</button>
+            </div>
+        `;
+    }).join('');
+
+    const culturesHtml = Object.entries(COMPANY_CULTURES).map(([id, culture]) => `
+        <div class="company-action-card">
+            <h4>${culture.label}${stats.culture === id ? ' / 選択中' : ''}</h4>
+            <p>${culture.desc}</p>
+            <button onclick="changeCompanyCulture('${id}')" ${stats.culture === id ? 'disabled' : ''}>社風にする</button>
+        </div>
+    `).join('');
+
+    const targets = allStocks.filter(s => s.isUserCompany && s.ownerUid !== currentUser.uid && s.ownerUid !== 'admin');
+    const takeoverHtml = targets.length ? targets.map(s => {
+        const targetPrice = stockPrices[s.id] || s.basePrice;
+        const cost = Math.max(500000, targetPrice * 80);
+        return `
+            <div class="takeover-row">
+                <div>
+                    <div class="target-name">${s.name} (${s.ticker})</div>
+                    <div class="target-meta">所有者: ${s.ownerUsername || s.ownerEmail || '他プレイヤー'} / 推定費用: ${formatYen(cost)}</div>
+                </div>
+                <button onclick="hostileTakeover('${s.id}')">敵対的M&A</button>
+            </div>
+        `;
+    }).join('') : '<div class="company-history-item">買収対象になるプレイヤー企業はまだありません。</div>';
+
+    const historyHtml = (userCompany.actionHistory || []).slice().reverse().map(item => {
+        const time = new Date(item.at).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return `<div class="company-history-item">${time} - ${item.message}</div>`;
+    }).join('') || '<div class="company-history-item">まだ経営履歴はありません。</div>';
+
+    const absorbedHtml = (userCompany.absorbedCompanies || []).map(c =>
+        `<div class="company-history-item">${c.name} (${c.ticker}) を吸収済み</div>`
+    ).join('') || '<div class="company-history-item">吸収した企業はまだありません。</div>';
+
+    companyInfo.innerHTML = `
+        <div class="company-dashboard">
+            <div class="company-hero">
+                <div>
+                    <div class="company-hero-title">${userCompany.name} (${userCompany.ticker})</div>
+                    <div class="company-hero-meta">社風: ${COMPANY_CULTURES[stats.culture]?.label || '未設定'} / 次の一手: ${cooldownText}</div>
+                    <span class="company-title-badge">${getCompanyTitle(userCompany)}</span>
+                </div>
+                <div class="company-price-box">
+                    <div class="label">現在株価</div>
+                    <div class="price">${formatYen(price)}</div>
+                    <div class="label">初期株価 ${formatYen(userCompany.initialPrice)}</div>
+                </div>
+            </div>
+
+            <div>
+                <div class="company-section-title">経営メーター</div>
+                <div class="company-stat-grid">${statCards}</div>
+            </div>
+
+            <div>
+                <div class="company-section-title">今日の一手</div>
+                <div class="company-action-grid">${actionsHtml}</div>
+            </div>
+
+            <div>
+                <div class="company-section-title">大型プロジェクト</div>
+                <div class="company-action-grid">${projectHtml}</div>
+            </div>
+
+            <div>
+                <div class="company-section-title">社風カード</div>
+                <div class="company-action-grid">${culturesHtml}</div>
+            </div>
+
+            <div>
+                <div class="company-section-title">敵対的M&A / 吸収</div>
+                <div class="takeover-list">${takeoverHtml}</div>
+            </div>
+
+            <div>
+                <div class="company-section-title">吸収済み企業</div>
+                <div class="company-history-list">${absorbedHtml}</div>
+            </div>
+
+            <div>
+                <div class="company-section-title">経営履歴</div>
+                <div class="company-history-list">${historyHtml}</div>
+            </div>
+        </div>
+    `;
 }
 
 /* ─── イベントシステム ─── */
