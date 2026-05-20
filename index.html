@@ -1401,6 +1401,26 @@ const FAMOUS_STOCKS = [
     { id: 'NTDOY', name: '任天堂',            ticker: 'NTDOY', basePrice: 8960,   sector: 'ゲーム' },
     { id: 'SBG',   name: 'ソフトバンクG',      ticker: 'SBG',   basePrice: 9200,   sector: '投資' },
     { id: 'KDDI',  name: 'KDDI',             ticker: 'KDDI',  basePrice: 4750,   sector: '通信' },
+    { id: 'NFLX',  name: 'Netflix',          ticker: 'NFLX',  basePrice: 68500,  sector: 'エンタメ' },
+    { id: 'DIS',   name: 'Disney',           ticker: 'DIS',   basePrice: 15200,  sector: 'エンタメ' },
+    { id: 'KO',    name: 'Coca-Cola',        ticker: 'KO',    basePrice: 9600,   sector: '食品・飲料' },
+    { id: 'MCD',   name: "McDonald's",       ticker: 'MCD',   basePrice: 43200,  sector: '外食' },
+    { id: 'V',     name: 'Visa',             ticker: 'V',     basePrice: 46800,  sector: '金融' },
+    { id: 'JPM',   name: 'JPMorgan Chase',   ticker: 'JPM',   basePrice: 31200,  sector: '金融' },
+    { id: 'UNH',   name: 'UnitedHealth',     ticker: 'UNH',   basePrice: 79200,  sector: 'ヘルスケア' },
+    { id: 'PFE',   name: 'Pfizer',           ticker: 'PFE',   basePrice: 4100,   sector: '医薬品' },
+    { id: 'ASML',  name: 'ASML',             ticker: 'ASML',  basePrice: 98500,  sector: '半導体' },
+    { id: 'TSM',   name: 'TSMC',             ticker: 'TSM',   basePrice: 24800,  sector: '半導体' },
+    { id: '7203',  name: '本田技研工業',       ticker: 'HMC',   basePrice: 1680,   sector: '自動車' },
+    { id: '8306',  name: '三菱UFJ FG',        ticker: 'MUFG',  basePrice: 1860,   sector: '金融' },
+    { id: '6758',  name: 'キーエンス',         ticker: 'KYCC',  basePrice: 66800,  sector: '精密機器' },
+    { id: '9983',  name: 'ファーストリテイリング', ticker: 'FRCOY', basePrice: 48200, sector: '小売' },
+    { id: '7974',  name: 'カプコン',           ticker: 'CCOEY', basePrice: 3150,   sector: 'ゲーム' },
+    { id: '9432',  name: 'NTT',              ticker: 'NTT',   basePrice: 165,    sector: '通信' },
+    { id: '6501',  name: '日立製作所',         ticker: 'HTHIY', basePrice: 16200,  sector: 'インフラ' },
+    { id: '8058',  name: '三菱商事',           ticker: 'MSBHY', basePrice: 3250,   sector: '商社' },
+    { id: '9020',  name: 'JR東日本',           ticker: 'EJPRY', basePrice: 2960,   sector: '鉄道' },
+    { id: '6861',  name: '東京エレクトロン',    ticker: 'TOELY', basePrice: 28400,  sector: '半導体' },
 ];
 
 /* ─── 管理者UID（ログイン時に自動的にDBに登録） ─── */
@@ -1443,6 +1463,11 @@ let lastSharedEventId = null;
 
 const COMPANY_STAT_MAX = 20;
 const COMPANY_ACTION_COOLDOWN = 5 * 60 * 1000;
+const COMPANY_NAME_BLOCKLIST = [
+    '死ね', '殺す', '殺害', '爆破', 'テロ', '犯罪', '詐欺', '麻薬', '覚醒剤',
+    'くそ', 'クソ', 'ばか', 'バカ', 'アホ', 'fuck', 'shit', 'bitch', 'asshole',
+    'sex', 'porn', 'nazi', 'hitler', 'admin', '管理者', '運営', '公式'
+];
 
 const COMPANY_CULTURES = {
     challenger: { label: '勝負師', desc: '大成功も大失敗も起こりやすい' },
@@ -1518,6 +1543,19 @@ const COMPANY_ACTIONS = {
         desc: '数分後に成否判定。成功すれば自社の看板イベントになる。',
         project: true,
         getRate: s => 35 + s.technology * 2 + s.morale * 1.5 + s.finance,
+    },
+    defense: {
+        title: '買収防衛策',
+        cost: 2500000,
+        desc: '30分間、敵対的M&Aへの耐性を大きく高める。',
+        defense: true,
+        getRate: s => 65 + s.trust * 1.5 + s.finance,
+        successMultiplier: 1.04,
+        failMultiplier: 0.97,
+        successText: '買収防衛策を発表。株主と市場に独立経営への姿勢を示しました。',
+        failText: '買収防衛策に市場から疑問の声。経営陣への不安が広がっています。',
+        successStats: { trust: 2, finance: 1 },
+        failStats: { trust: -1, finance: -1 },
     },
 };
 
@@ -2067,6 +2105,25 @@ function formatYen(value) {
     return `¥${Math.round(value).toLocaleString()}`;
 }
 
+function validateCompanyName(name) {
+    const normalized = String(name || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (!normalized || normalized.length > 20) return '有効な会社名を入力してください';
+    if (/https?:\/\//i.test(name) || /www\./i.test(name)) return 'URLを含む会社名は使えません';
+    if (/[<>{}[\]\\]/.test(name)) return '記号 < > { } [ ] \\ は会社名に使えません';
+    if (COMPANY_NAME_BLOCKLIST.some(word => normalized.includes(word.toLowerCase()))) {
+        return '不適切または紛らわしい会社名は使えません';
+    }
+    const existing = allStocks.some(s => s.name && s.name.toLowerCase().replace(/\s+/g, '') === normalized);
+    if (existing) return '同じ名前の会社が既にあります';
+    return '';
+}
+
+function validateTicker(ticker) {
+    if (!/^[A-Z]{2,5}$/.test(ticker)) return 'ティッカーは英大文字2〜5文字です';
+    if (allStocks.some(s => s.ticker === ticker)) return '同じティッカーが既にあります';
+    return '';
+}
+
 function getCompanyTitle(company) {
     const stats = company.companyStats || createDefaultCompanyStats();
     const absorbed = company.absorbedCompanies?.length || 0;
@@ -2185,6 +2242,15 @@ window.performCompanyAction = async function(actionId) {
     const rate = getSuccessRate(action, stats);
     const success = Math.random() * 100 < rate;
     userCompany.companyStats = applyStatDelta(stats, success ? action.successStats : action.failStats);
+    if (action.defense) {
+        userCompany.companyEffects = userCompany.companyEffects || {};
+        if (success) {
+            userCompany.companyEffects.takeoverShieldUntil = Date.now() + 30 * 60 * 1000;
+            userCompany.companyEffects.takeoverDefense = (Number(userCompany.companyEffects.takeoverDefense) || 0) + 1;
+        } else {
+            userCompany.companyEffects.takeoverDefense = Math.max(0, (Number(userCompany.companyEffects.takeoverDefense) || 0) - 1);
+        }
+    }
     const title = success ? `${action.title} 成功` : `${action.title} 失敗`;
     const body = `${userCompany.name} ${success ? action.successText : action.failText}`;
     pushCompanyHistory(`${action.title}: ${success ? '成功' : '失敗'}（成功率${rate}%）`, success ? 'success' : 'fail');
@@ -2258,7 +2324,13 @@ window.hostileTakeover = async function(targetId) {
 
     userCompany = normalizeCompany(userCompany);
     const stats = userCompany.companyStats;
-    const targetDefense = 25 + (targetStock.companyStats?.trust || 1) * 3 + Math.min(25, Math.round(targetPrice / 1000));
+    const shieldActive = (targetStock.companyEffects?.takeoverShieldUntil || 0) > Date.now();
+    const defenseLevel = Number(targetStock.companyEffects?.takeoverDefense) || 0;
+    const targetDefense = 25
+        + (targetStock.companyStats?.trust || 1) * 3
+        + Math.min(25, Math.round(targetPrice / 1000))
+        + defenseLevel * 8
+        + (shieldActive ? 35 : 0);
     const attack = 35 + stats.finance * 3 + stats.brand + stats.attention;
     const rate = Math.max(15, Math.min(85, attack - targetDefense + 45));
     const success = Math.random() * 100 < rate;
@@ -2326,8 +2398,10 @@ window.createCompany = async function() {
     const ticker = document.getElementById('company-ticker').value.trim().toUpperCase();
     const price  = parseInt(document.getElementById('company-price').value);
  
-    if (!name || name.length > 20) { showToast('有効な会社名を入力してください', 'error'); return; }
-    if (!/^[A-Z]{2,5}$/.test(ticker)) { showToast('ティッカーは英大文字2〜5文字です', 'error'); return; }
+    const nameError = validateCompanyName(name);
+    if (nameError) { showToast(nameError, 'error'); return; }
+    const tickerError = validateTicker(ticker);
+    if (tickerError) { showToast(tickerError, 'error'); return; }
     if (isNaN(price) || price < 100 || price > 100000) { showToast('価格は100〜100,000円の間です', 'error'); return; }
     if (balance < 1000000) { showToast('設立費用1,000,000円が不足しています', 'error'); return; }
  
@@ -2468,10 +2542,11 @@ window.addCompanyFromAdmin = async function() {
     const ticker = document.getElementById('new-company-ticker').value.trim().toUpperCase();
     const price = parseInt(document.getElementById('new-company-price').value);
 
-    if (!name || !ticker || isNaN(price)) {
-        showToast('すべての項目を入力してください', 'error');
-        return;
-    }
+    const nameError = validateCompanyName(name);
+    if (nameError) { showToast(nameError, 'error'); return; }
+    const tickerError = validateTicker(ticker);
+    if (tickerError) { showToast(tickerError, 'error'); return; }
+    if (isNaN(price) || price < 100) { showToast('初期株価は100円以上で入力してください', 'error'); return; }
 
     const companyId = 'admin_' + Date.now();
     try {
@@ -3064,6 +3139,12 @@ function updateCompanyStatus() {
     const price = stockPrices[userCompany.id] || userCompany.initialPrice;
     const cooldownLeft = Math.max(0, COMPANY_ACTION_COOLDOWN - (Date.now() - stats.lastActionAt));
     const cooldownText = cooldownLeft > 0 ? `あと${Math.ceil(cooldownLeft / 60000)}分` : '実行可能';
+    const shieldUntil = userCompany.companyEffects?.takeoverShieldUntil || 0;
+    const shieldActive = shieldUntil > Date.now();
+    const defenseLevel = Number(userCompany.companyEffects?.takeoverDefense) || 0;
+    const defenseText = shieldActive
+        ? `防衛中 / 残り${Math.ceil((shieldUntil - Date.now()) / 60000)}分 / 防衛Lv.${defenseLevel}`
+        : `通常 / 防衛Lv.${defenseLevel}`;
     const project = userCompany.companyProjects?.active;
     const projectHtml = project ? `
         <div class="company-action-card">
@@ -3119,11 +3200,13 @@ function updateCompanyStatus() {
     const takeoverHtml = targets.length ? targets.map(s => {
         const targetPrice = stockPrices[s.id] || s.basePrice;
         const cost = Math.max(5000000, targetPrice * 800);
+        const targetShield = (s.companyEffects?.takeoverShieldUntil || 0) > Date.now();
+        const targetDefense = Number(s.companyEffects?.takeoverDefense) || 0;
         return `
             <div class="takeover-row">
                 <div>
                     <div class="target-name">${s.name} (${s.ticker})</div>
-                    <div class="target-meta">所有者: ${s.ownerUsername || s.ownerEmail || '他プレイヤー'} / 推定費用: ${formatYen(cost)}</div>
+                    <div class="target-meta">所有者: ${s.ownerUsername || s.ownerEmail || '他プレイヤー'} / 推定費用: ${formatYen(cost)} / 防衛Lv.${targetDefense}${targetShield ? ' / 防衛中' : ''}</div>
                 </div>
                 <button onclick="hostileTakeover('${s.id}')">敵対的M&A</button>
             </div>
@@ -3145,6 +3228,7 @@ function updateCompanyStatus() {
                 <div>
                     <div class="company-hero-title">${userCompany.name} (${userCompany.ticker})</div>
                     <div class="company-hero-meta">社風: ${COMPANY_CULTURES[stats.culture]?.label || '未設定'} / 次の一手: ${cooldownText}</div>
+                    <div class="company-hero-meta">買収防衛: ${defenseText}</div>
                     <span class="company-title-badge">${getCompanyTitle(userCompany)}</span>
                 </div>
                 <div class="company-price-box">
