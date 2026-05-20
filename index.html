@@ -3064,7 +3064,7 @@ function tickPrices() {
         const multiplier = activeMultipliers[s.id] || 1.0;
         
         // 基本的なドリフト + イベントの影響
-        const baseDrift = (Math.random() - 0.498) * volatility;
+        const baseDrift = (Math.random() - 0.5) * volatility;
         const eventImpact = (multiplier - 1.0) * 0.1; // 倍率に応じてドリフトを調整
         
         let newPrice = prev * (1 + baseDrift + eventImpact);
@@ -3236,7 +3236,7 @@ function calculateNextMarketState(state, now) {
         const stabilityGuard = s.isUserCompany && multiplier < 1
             ? Math.min(0.04, (stats.trust || 0) * 0.002)
             : 0;
-        const baseDrift = (Math.random() - 0.498) * volatility;
+        const baseDrift = (Math.random() - 0.5) * volatility;
         const eventImpact = (multiplier - 1.0 + stabilityGuard) * 0.1;
         let newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift)));
         
