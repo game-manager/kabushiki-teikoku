@@ -1389,38 +1389,38 @@ const db   = getDatabase(app);
  
 /* ─── 有名企業データ ─── */
 const FAMOUS_STOCKS = [
-    { id: 'AAPL',  name: 'Apple',           ticker: 'AAPL',  basePrice: 215000, sector: 'テクノロジー' },
-    { id: 'GOOGL', name: 'Alphabet(Google)', ticker: 'GOOGL', basePrice: 198000, sector: 'テクノロジー' },
-    { id: 'AMZN',  name: 'Amazon',           ticker: 'AMZN',  basePrice: 220000, sector: 'EC・クラウド' },
-    { id: 'MSFT',  name: 'Microsoft',        ticker: 'MSFT',  basePrice: 245000, sector: 'テクノロジー' },
-    { id: 'TSLA',  name: 'Tesla',            ticker: 'TSLA',  basePrice: 185000, sector: '自動車・EV' },
-    { id: 'META',  name: 'Meta(Facebook)',    ticker: 'META',  basePrice: 210000, sector: 'SNS・VR' },
-    { id: 'NVDA',  name: 'NVIDIA',           ticker: 'NVDA',  basePrice: 235000, sector: '半導体' },
-    { id: 'TM',    name: 'トヨタ自動車',      ticker: 'TM',    basePrice: 192000, sector: '自動車' },
-    { id: 'SONY',  name: 'ソニーグループ',     ticker: 'SONY',  basePrice: 205000, sector: 'エレクトロニクス' },
-    { id: 'NTDOY', name: '任天堂',            ticker: 'NTDOY', basePrice: 188000, sector: 'ゲーム' },
-    { id: 'SBG',   name: 'ソフトバンクG',      ticker: 'SBG',   basePrice: 195000, sector: '投資' },
-    { id: 'KDDI',  name: 'KDDI',             ticker: 'KDDI',  basePrice: 182000, sector: '通信' },
-    { id: 'NFLX',  name: 'Netflix',          ticker: 'NFLX',  basePrice: 228000, sector: 'エンタメ' },
-    { id: 'DIS',   name: 'Disney',           ticker: 'DIS',   basePrice: 194000, sector: 'エンタメ' },
-    { id: 'KO',    name: 'Coca-Cola',        ticker: 'KO',    basePrice: 186000, sector: '食品・飲料' },
-    { id: 'MCD',   name: "McDonald's",       ticker: 'MCD',   basePrice: 212000, sector: '外食' },
-    { id: 'V',     name: 'Visa',             ticker: 'V',     basePrice: 218000, sector: '金融' },
-    { id: 'JPM',   name: 'JPMorgan Chase',   ticker: 'JPM',   basePrice: 208000, sector: '金融' },
-    { id: 'UNH',   name: 'UnitedHealth',     ticker: 'UNH',   basePrice: 242000, sector: 'ヘルスケア' },
-    { id: 'PFE',   name: 'Pfizer',           ticker: 'PFE',   basePrice: 178000, sector: '医薬品' },
-    { id: 'ASML',  name: 'ASML',             ticker: 'ASML',  basePrice: 255000, sector: '半導体' },
-    { id: 'TSM',   name: 'TSMC',             ticker: 'TSM',   basePrice: 222000, sector: '半導体' },
-    { id: '7203',  name: '本田技研工業',       ticker: 'HMC',   basePrice: 184000, sector: '自動車' },
-    { id: '8306',  name: '三菱UFJ FG',        ticker: 'MUFG',  basePrice: 176000, sector: '金融' },
-    { id: '6758',  name: 'キーエンス',         ticker: 'KYCC',  basePrice: 238000, sector: '精密機器' },
-    { id: '9983',  name: 'ファーストリテイリング', ticker: 'FRCOY', basePrice: 226000, sector: '小売' },
-    { id: '7974',  name: 'カプコン',           ticker: 'CCOEY', basePrice: 189000, sector: 'ゲーム' },
-    { id: '9432',  name: 'NTT',              ticker: 'NTT',   basePrice: 172000, sector: '通信' },
-    { id: '6501',  name: '日立製作所',         ticker: 'HTHIY', basePrice: 202000, sector: 'インフラ' },
-    { id: '8058',  name: '三菱商事',           ticker: 'MSBHY', basePrice: 196000, sector: '商社' },
-    { id: '9020',  name: 'JR東日本',           ticker: 'EJPRY', basePrice: 191000, sector: '鉄道' },
-    { id: '6861',  name: '東京エレクトロン',    ticker: 'TOELY', basePrice: 232000, sector: '半導体' },
+    { id: 'AAPL',  name: 'Apple',           ticker: 'AAPL',  basePrice: 150000, sector: 'テクノロジー' },
+    { id: 'GOOGL', name: 'Alphabet(Google)', ticker: 'GOOGL', basePrice: 850000, sector: 'テクノロジー' },
+    { id: 'AMZN',  name: 'Amazon',           ticker: 'AMZN',  basePrice: 12000,  sector: 'EC・クラウド' },
+    { id: 'MSFT',  name: 'Microsoft',        ticker: 'MSFT',  basePrice: 540000, sector: 'テクノロジー' },
+    { id: 'TSLA',  name: 'Tesla',            ticker: 'TSLA',  basePrice: 35000,  sector: '自動車・EV' },
+    { id: 'META',  name: 'Meta(Facebook)',    ticker: 'META',  basePrice: 920000, sector: 'SNS・VR' },
+    { id: 'NVDA',  name: 'NVIDIA',           ticker: 'NVDA',  basePrice: 450000, sector: '半導体' },
+    { id: 'TM',    name: 'トヨタ自動車',      ticker: 'TM',    basePrice: 3000,   sector: '自動車' },
+    { id: 'SONY',  name: 'ソニーグループ',     ticker: 'SONY',  basePrice: 15000,  sector: 'エレクトロニクス' },
+    { id: 'NTDOY', name: '任天堂',            ticker: 'NTDOY', basePrice: 65000,  sector: 'ゲーム' },
+    { id: 'SBG',   name: 'ソフトバンクG',      ticker: 'SBG',   basePrice: 120000, sector: '投資' },
+    { id: 'KDDI',  name: 'KDDI',             ticker: 'KDDI',  basePrice: 5000,   sector: '通信' },
+    { id: 'NFLX',  name: 'Netflix',          ticker: 'NFLX',  basePrice: 780000, sector: 'エンタメ' },
+    { id: 'DIS',   name: 'Disney',           ticker: 'DIS',   basePrice: 45000,  sector: 'エンタメ' },
+    { id: 'KO',    name: 'Coca-Cola',        ticker: 'KO',    basePrice: 12000,  sector: '食品・飲料' },
+    { id: 'MCD',   name: "McDonald's",       ticker: 'MCD',   basePrice: 320000, sector: '外食' },
+    { id: 'V',     name: 'Visa',             ticker: 'V',     basePrice: 560000, sector: '金融' },
+    { id: 'JPM',   name: 'JPMorgan Chase',   ticker: 'JPM',   basePrice: 280000, sector: '金融' },
+    { id: 'UNH',   name: 'UnitedHealth',     ticker: 'UNH',   basePrice: 950000, sector: 'ヘルスケア' },
+    { id: 'PFE',   name: 'Pfizer',           ticker: 'PFE',   basePrice: 4000,   sector: '医薬品' },
+    { id: 'ASML',  name: 'ASML',             ticker: 'ASML',  basePrice: 880000, sector: '半導体' },
+    { id: 'TSM',   name: 'TSMC',             ticker: 'TSM',   basePrice: 120000, sector: '半導体' },
+    { id: '7203',  name: '本田技研工業',       ticker: 'HMC',   basePrice: 2500,   sector: '自動車' },
+    { id: '8306',  name: '三菱UFJ FG',        ticker: 'MUFG',  basePrice: 1800,   sector: '金融' },
+    { id: '6758',  name: 'キーエンス',         ticker: 'KYCC',  basePrice: 720000, sector: '精密機器' },
+    { id: '9983',  name: 'ファーストリテイリング', ticker: 'FRCOY', basePrice: 640000, sector: '小売' },
+    { id: '7974',  name: 'カプコン',           ticker: 'CCOEY', basePrice: 4500,   sector: 'ゲーム' },
+    { id: '9432',  name: 'NTT',              ticker: 'NTT',   basePrice: 1200,   sector: '通信' },
+    { id: '6501',  name: '日立製作所',         ticker: 'HTHIY', basePrice: 180000, sector: 'インフラ' },
+    { id: '8058',  name: '三菱商事',           ticker: 'MSBHY', basePrice: 35000,  sector: '商社' },
+    { id: '9020',  name: 'JR東日本',           ticker: 'EJPRY', basePrice: 8000,   sector: '鉄道' },
+    { id: '6861',  name: '東京エレクトロン',    ticker: 'TOELY', basePrice: 420000, sector: '半導体' },
 ];
 
 /* ─── 管理者UID（ログイン時に自動的にDBに登録） ─── */
@@ -3071,10 +3071,9 @@ function tickPrices() {
         newPrice = Math.max(newPrice, 1);
         newPrice = Math.round(newPrice);
         
-        // 前後10万円の範囲内に制限
-        const initialPrice = s.basePrice;
-        const minPrice = Math.max(1, initialPrice - 100000);
-        const maxPrice = initialPrice + 100000;
+        // 1,000円〜100万円の範囲内に制限
+        const minPrice = 1000;
+        const maxPrice = 1000000;
         newPrice = Math.min(Math.max(newPrice, minPrice), maxPrice);
 
         stockPrices[s.id] = newPrice;
@@ -3241,10 +3240,9 @@ function calculateNextMarketState(state, now) {
         const eventImpact = (multiplier - 1.0 + stabilityGuard) * 0.1;
         let newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift)));
         
-        // 前後10万円の範囲内に制限
-        const initialPrice = s.basePrice;
-        const minPrice = Math.max(1, initialPrice - 100000);
-        const maxPrice = initialPrice + 100000;
+        // 1,000円〜100万円の範囲内に制限
+        const minPrice = 1000;
+        const maxPrice = 1000000;
         newPrice = Math.min(Math.max(newPrice, minPrice), maxPrice);
 
         prices[s.id] = newPrice;
