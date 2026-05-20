@@ -1455,7 +1455,7 @@ let marketFilter   = 'real';
 let lastBonusDate  = null;
 let lastTaxDate    = null; // 最後に税金を支払った日時
 const TAX_INTERVAL = 30 * 60 * 1000; // 30分 (ミリ秒)
-const TAX_RATE     = 0.02; // 税率 2% (総資産に対して)
+const TAX_RATE     = 0.10; // 税率 10% (総資産に対して)
 let allPlayers     = {};
 let currentUsername = '';
 let allCompanies   = [];
@@ -1867,7 +1867,7 @@ function checkAndApplyTax() {
             updateBalanceDisplay();
             saveUserData();
             
-            showToast(`【納税】総資産の2%（${formatYen(taxAmount)}）が税金として徴収されました。`, 'warning');
+            showToast(`【納税】総資産の10%（${formatYen(taxAmount)}）が税金として徴収されました。`, 'warning');
         } else {
             lastTaxDate = now;
             saveUserData();
