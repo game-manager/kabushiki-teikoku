@@ -2069,6 +2069,7 @@ function normalizeCompany(company) {
         companyProjects: company.companyProjects || {},
         actionHistory: Array.isArray(company.actionHistory) ? company.actionHistory.slice(-10) : [],
         absorbedCompanies: Array.isArray(company.absorbedCompanies) ? company.absorbedCompanies : [],
+        alliances: Array.isArray(company.alliances) ? company.alliances : [],
     };
 }
 
@@ -2144,6 +2145,19 @@ async function persistUserCompany(extraUpdates = {}) {
         balance
     });
     saveToLocalStorage();
+}
+
+async function persistCompanyEverywhere(company) {
+    if (!company?.id) return;
+    const normalized = normalizeCompany(company);
+    await update(dbRef(db, `companies/${normalized.id}`), normalized);
+    if (normalized.ownerUid) {
+        const ownerCompanyRef = dbRef(db, `stock_users/${normalized.ownerUid}/company`);
+        const snap = await get(ownerCompanyRef);
+        if (snap.exists() && snap.val()?.id === normalized.id) {
+            await set(ownerCompanyRef, normalized);
+        }
+    }
 }
 
 function pushCompanyHistory(message, type = 'info') {
@@ -2392,6 +2406,172 @@ window.hostileTakeover = async function(targetId) {
     updateCompanyStatus();
 };
 
+function getPartnerCompany(targetId) {
+    const targetStock = allStocks.find(s => s.id === targetId);
+    if (!targetStock || !targetStock.isUserCompany || targetStock.ownerUid === currentUser.uid || targetStock.ownerUid === 'admin') return null;
+    return normalizeCompany({
+        ...targetStock,
+        initialPrice: targetStock.basePrice,
+        createdAt: targetStock.createdAt || Date.now(),
+        companyStats: targetStock.companyStats || createDefaultCompanyStats(),
+        companyEffects: targetStock.companyEffects || {},
+        companyProjects: targetStock.companyProjects || {},
+        actionHistory: targetStock.actionHistory || [],
+        absorbedCompanies: targetStock.absorbedCompanies || [],
+        alliances: targetStock.alliances || [],
+    });
+}
+
+window.sendCompanyFunds = async function(targetId, amount) {
+    if (!userCompany || !targetId) return;
+    const target = getPartnerCompany(targetId);
+    if (!target) { showToast('支援できない企業です', 'error'); return; }
+    if (balance < amount) { showToast('支援資金が不足しています', 'error'); return; }
+    if (!confirm(`${target.name} に ${formatYen(amount)} を資金支援しますか？\n相手プレイヤーの残高が増え、自社の信頼と株主人気が少し上がります。`)) return;
+
+    balance -= amount;
+    userCompany = normalizeCompany(userCompany);
+    userCompany.companyStats = applyStatDelta(userCompany.companyStats, { trust: 1, shareholderLove: 1 });
+    pushCompanyHistory(`${target.name} に ${formatYen(amount)} の資金支援を行いました`, 'success');
+
+    target.actionHistory = Array.isArray(target.actionHistory) ? target.actionHistory.slice(-9) : [];
+    target.actionHistory.push({
+        at: Date.now(),
+        type: 'success',
+        message: `${userCompany.name} から ${formatYen(amount)} の資金支援を受けました`
+    });
+    target.companyStats = applyStatDelta(target.companyStats, { finance: 1, trust: 1 });
+
+    await runTransaction(dbRef(db, `stock_users/${target.ownerUid}/balance`), current => (Number(current) || 0) + amount);
+    await persistCompanyEverywhere(target);
+    await persistUserCompany();
+    await applyCompanyMarketImpact({
+        title: '資金支援',
+        body: `${userCompany.name} が ${target.name} に ${formatYen(amount)} の資金支援を実施。友好関係が市場で評価されています。`,
+        type: 'up',
+        multiplier: 1.05,
+        duration: 45000
+    });
+    await applyCompanyMarketImpact({
+        title: '資金支援を受領',
+        body: `${target.name} が ${userCompany.name} から資金支援を受けました。財務改善への期待が広がっています。`,
+        type: 'up',
+        multiplier: 1.06,
+        duration: 45000,
+        targetId: target.id
+    });
+    updateBalanceDisplay();
+    await initMarket();
+    updateCompanyStatus();
+    showToast('資金支援を送りました', 'success');
+};
+
+window.formBusinessAlliance = async function(targetId) {
+    if (!userCompany || !targetId) return;
+    const target = getPartnerCompany(targetId);
+    const cost = 1500000;
+    if (!target) { showToast('提携できない企業です', 'error'); return; }
+    if (balance < cost) { showToast(`提携費用が不足しています（必要: ${formatYen(cost)}）`, 'error'); return; }
+    if (!confirm(`${target.name} と業務提携しますか？\n費用: ${formatYen(cost)}\n両社のブランド・信頼が上がります。`)) return;
+
+    balance -= cost;
+    const now = Date.now();
+    userCompany = normalizeCompany(userCompany);
+    userCompany.companyStats = applyStatDelta(userCompany.companyStats, { brand: 1, trust: 1, attention: 1 });
+    userCompany.alliances = [
+        ...(userCompany.alliances || []).filter(a => a.id !== target.id),
+        { id: target.id, name: target.name, ticker: target.ticker, type: 'business', at: now }
+    ].slice(-8);
+    pushCompanyHistory(`${target.name} と業務提携を結びました`, 'success');
+
+    target.companyStats = applyStatDelta(target.companyStats, { brand: 1, trust: 1, attention: 1 });
+    target.alliances = [
+        ...(target.alliances || []).filter(a => a.id !== userCompany.id),
+        { id: userCompany.id, name: userCompany.name, ticker: userCompany.ticker, type: 'business', at: now }
+    ].slice(-8);
+    target.actionHistory = Array.isArray(target.actionHistory) ? target.actionHistory.slice(-9) : [];
+    target.actionHistory.push({ at: now, type: 'success', message: `${userCompany.name} と業務提携を結びました` });
+
+    await persistCompanyEverywhere(target);
+    await persistUserCompany();
+    await applyCompanyMarketImpact({
+        title: '業務提携',
+        body: `${userCompany.name} と ${target.name} が業務提携を発表。両社の成長期待が高まっています。`,
+        type: 'up',
+        multiplier: 1.08,
+        duration: 60000
+    });
+    await applyCompanyMarketImpact({
+        title: '業務提携',
+        body: `${target.name} と ${userCompany.name} が業務提携を発表。市場は相乗効果に注目しています。`,
+        type: 'up',
+        multiplier: 1.08,
+        duration: 60000,
+        targetId: target.id
+    });
+    updateBalanceDisplay();
+    await initMarket();
+    updateCompanyStatus();
+    showToast('業務提携を結びました', 'success');
+};
+
+window.launchJointProject = async function(targetId) {
+    if (!userCompany || !targetId) return;
+    const target = getPartnerCompany(targetId);
+    const cost = 3000000;
+    if (!target) { showToast('共同開発できない企業です', 'error'); return; }
+    if (balance < cost) { showToast(`共同開発費用が不足しています（必要: ${formatYen(cost)}）`, 'error'); return; }
+    if (!confirm(`${target.name} と共同開発を行いますか？\n費用: ${formatYen(cost)}\n成功すれば両社の技術力と注目度が上がります。`)) return;
+
+    balance -= cost;
+    const ownStats = normalizeCompany(userCompany).companyStats;
+    const targetStats = target.companyStats || createDefaultCompanyStats();
+    const rate = Math.max(20, Math.min(90, Math.round(35 + ownStats.technology * 2 + ownStats.morale + targetStats.technology * 2 + targetStats.brand)));
+    const success = Math.random() * 100 < rate;
+    userCompany = normalizeCompany(userCompany);
+    userCompany.companyStats = applyStatDelta(userCompany.companyStats, success
+        ? { technology: 2, brand: 1, attention: 2 }
+        : { finance: -1, morale: -1, attention: 1 });
+    target.companyStats = applyStatDelta(target.companyStats, success
+        ? { technology: 2, brand: 1, attention: 2 }
+        : { morale: -1, attention: 1 });
+
+    const message = `${target.name} との共同開発: ${success ? '成功' : '失敗'}（成功率${rate}%）`;
+    pushCompanyHistory(message, success ? 'success' : 'fail');
+    target.actionHistory = Array.isArray(target.actionHistory) ? target.actionHistory.slice(-9) : [];
+    target.actionHistory.push({
+        at: Date.now(),
+        type: success ? 'success' : 'fail',
+        message: `${userCompany.name} との共同開発: ${success ? '成功' : '失敗'}（成功率${rate}%）`
+    });
+
+    await persistCompanyEverywhere(target);
+    await persistUserCompany();
+    await applyCompanyMarketImpact({
+        title: success ? '共同開発成功' : '共同開発失敗',
+        body: success
+            ? `${userCompany.name} と ${target.name} の共同開発が成功。市場は両社の技術力を再評価しています。`
+            : `${userCompany.name} と ${target.name} の共同開発は難航。市場では成果待ちの姿勢が強まっています。`,
+        type: success ? 'up' : 'down',
+        multiplier: success ? 1.14 : 0.94,
+        duration: 60000
+    });
+    await applyCompanyMarketImpact({
+        title: success ? '共同開発成功' : '共同開発失敗',
+        body: success
+            ? `${target.name} と ${userCompany.name} の共同開発が成功。相乗効果への期待が高まっています。`
+            : `${target.name} と ${userCompany.name} の共同開発は難航しています。`,
+        type: success ? 'up' : 'down',
+        multiplier: success ? 1.14 : 0.94,
+        duration: 60000,
+        targetId: target.id
+    });
+    updateBalanceDisplay();
+    await initMarket();
+    updateCompanyStatus();
+    showToast(success ? '共同開発に成功しました' : '共同開発は失敗しました', success ? 'success' : 'error');
+};
+
 /* ─── 会社設立 ─── */
 window.createCompany = async function() {
     const name   = document.getElementById('company-name').value.trim();
@@ -2421,6 +2601,7 @@ window.createCompany = async function() {
         companyProjects: {},
         actionHistory: [],
         absorbedCompanies: [],
+        alliances: [],
         createdAt: Date.now()
     };
  
@@ -2562,6 +2743,7 @@ window.addCompanyFromAdmin = async function() {
             companyProjects: {},
             actionHistory: [],
             absorbedCompanies: [],
+            alliances: [],
             createdAt: Date.now()
         };
         await set(dbRef(db, `companies/${companyId}`), newCompany);
@@ -2840,7 +3022,10 @@ async function loadPublicCompanies() {
                         companyStats: c.companyStats || createDefaultCompanyStats(),
                         companyEffects: c.companyEffects || {},
                         companyProjects: c.companyProjects || {},
+                        actionHistory: c.actionHistory || [],
                         absorbedCompanies: c.absorbedCompanies || [],
+                        alliances: c.alliances || [],
+                        createdAt: c.createdAt || null,
                     });
                     if (!stockPrices[c.id]) {
                         stockPrices[c.id] = c.initialPrice;
@@ -3219,6 +3404,20 @@ function updateCompanyStatus() {
         `;
     }).join('') : '<div class="company-history-item">買収対象になるプレイヤー企業はまだありません。</div>';
 
+    const partnerHtml = targets.length ? targets.map(s => `
+        <div class="takeover-row">
+            <div>
+                <div class="target-name">${s.name} (${s.ticker})</div>
+                <div class="target-meta">所有者: ${s.ownerUsername || s.ownerEmail || '他プレイヤー'} / 協力すると両社に好材料が出ます</div>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+                <button onclick="formBusinessAlliance('${s.id}')" style="background:#064e3b;border-color:#065f46;color:#bbf7d0;">業務提携</button>
+                <button onclick="launchJointProject('${s.id}')" style="background:#1e3a5f;border-color:#2563eb;color:#bfdbfe;">共同開発</button>
+                <button onclick="sendCompanyFunds('${s.id}', 1000000)" style="background:#78350f;border-color:#92400e;color:#fde68a;">100万円支援</button>
+            </div>
+        </div>
+    `).join('') : '<div class="company-history-item">協力できるプレイヤー企業はまだありません。</div>';
+
     const historyHtml = (userCompany.actionHistory || []).slice().reverse().map(item => {
         const time = new Date(item.at).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
         return `<div class="company-history-item">${time} - ${item.message}</div>`;
@@ -3227,6 +3426,10 @@ function updateCompanyStatus() {
     const absorbedHtml = (userCompany.absorbedCompanies || []).map(c =>
         `<div class="company-history-item">${c.name} (${c.ticker}) を吸収済み</div>`
     ).join('') || '<div class="company-history-item">吸収した企業はまだありません。</div>';
+
+    const alliancesHtml = (userCompany.alliances || []).slice().reverse().map(a =>
+        `<div class="company-history-item">${a.name} (${a.ticker}) と${a.type === 'business' ? '業務提携' : '連携'}中</div>`
+    ).join('') || '<div class="company-history-item">提携中の企業はまだありません。</div>';
 
     companyInfo.innerHTML = `
         <div class="company-dashboard">
@@ -3265,8 +3468,18 @@ function updateCompanyStatus() {
             </div>
 
             <div>
+                <div class="company-section-title">友好提携 / 支援</div>
+                <div class="takeover-list">${partnerHtml}</div>
+            </div>
+
+            <div>
                 <div class="company-section-title">敵対的M&A / 吸収</div>
                 <div class="takeover-list">${takeoverHtml}</div>
+            </div>
+
+            <div>
+                <div class="company-section-title">提携中の企業</div>
+                <div class="company-history-list">${alliancesHtml}</div>
             </div>
 
             <div>
