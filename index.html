@@ -3102,8 +3102,14 @@ function createSharedMarketEvent(now) {
 }
 
 function applySharedMarketState(state) {
-    stockPrices = state.prices || {};
-    priceHistory = state.history || {};
+    stockPrices = { ...(state.prices || {}) };
+    priceHistory = { ...(state.history || {}) };
+    allStocks.forEach(s => {
+        if (!stockPrices[s.id]) stockPrices[s.id] = s.basePrice;
+        if (!Array.isArray(priceHistory[s.id]) || priceHistory[s.id].length === 0) {
+            priceHistory[s.id] = [stockPrices[s.id]];
+        }
+    });
     sharedActiveEvents = state.activeMultipliers || {};
     activeMultipliers = {};
 
@@ -3588,10 +3594,12 @@ function updateMarketTime() {
  
 /* ─── インライン取引実行 ─── */
 window.executeInlineTrade = async function(mode, stockId, qty) {
-    const price = stockPrices[stockId];
+    const stock = allStocks.find(s => s.id === stockId);
+    const price = stockPrices[stockId] || stock?.basePrice;
     const total = qty * price;
 
     if (!qty || qty < 1) { showToast('数量を入力してください', 'error'); return; }
+    if (!stock || !price) { showToast('株価データを読み込み中です', 'error'); return; }
 
     if (mode === 'buy') {
         if (total > balance) {
