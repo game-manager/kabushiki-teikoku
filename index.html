@@ -1461,6 +1461,7 @@ let currentUsername = '';
 let allCompanies   = [];
 let activeMultipliers = {}; // イベントによる倍率 { stockId: multiplier }
 let sharedActiveEvents = {}; // DB保存用のイベント影響 { stockId: { multiplier, expiresAt } }
+let lastMarketUpdate = Date.now(); // 株価更新の最終時刻を記録
 let selectedStockId = null;
 let lastSharedEventId = null;
 
@@ -3141,6 +3142,7 @@ function startSharedMarket() {
     marketStateUnsubscribe = onValue(dbRef(db, 'market/state'), (snapshot) => {
         const state = snapshot.val();
         if (!state) return;
+        lastMarketUpdate = Date.now(); // 更新時刻を記録
         applySharedMarketState(state);
     }, (e) => {
         console.warn('Shared market listener failed:', e.message);
@@ -3148,7 +3150,8 @@ function startSharedMarket() {
     });
 
     maintainMarketLeadership();
-    marketLeaderInterval = setInterval(maintainMarketLeadership, 2000);
+    // 2秒から1.5秒に短縮し、リーダーの空白期間を減らす
+    marketLeaderInterval = setInterval(maintainMarketLeadership, 1500);
 }
 
 function stopSharedMarket() {
@@ -3215,13 +3218,26 @@ function buildInitialMarketState(baseState = {}) {
     };
 }
 
+let lastTickTime = 0;
 async function tickSharedMarketAsLeader() {
-    const stateRef = dbRef(db, 'market/state');
-    const snap = await get(stateRef);
     const now = Date.now();
-    const state = buildInitialMarketState(snap.exists() ? snap.val() : {});
-    const nextState = calculateNextMarketState(state, now);
-    await set(stateRef, nextState);
+    // 前回の更新から1秒以上経過していない場合はスキップ（過剰な更新を防止）
+    if (now - lastTickTime < 1000) return;
+    
+    const stateRef = dbRef(db, 'market/state');
+    try {
+        const snap = await get(stateRef);
+        const state = buildInitialMarketState(snap.exists() ? snap.val() : {});
+        
+        // データの更新時刻を確認し、他の誰かが既に最近更新していないかチェック
+        if (state.updatedAt && now - state.updatedAt < 1000) return;
+        
+        const nextState = calculateNextMarketState(state, now);
+        await set(stateRef, nextState);
+        lastTickTime = now;
+    } catch (e) {
+        console.warn('Tick shared market failed:', e.message);
+    }
 }
 
 async function ensureSharedStockInMarket(company) {
@@ -3984,6 +4000,18 @@ function showToast(msg, type) {
 /* ─── 初期化 ─── */
 setInterval(updateMarketTime, 1000);
 setInterval(checkForWarnings, 5000);
+
+// 株価更新が止まっていないか監視する
+setInterval(() => {
+    const now = Date.now();
+    if (now - lastMarketUpdate > 15000) { // 15秒以上更新がない場合
+        console.warn('Market update seems stalled. Attempting to restart listener...');
+        if (typeof startSharedMarket === 'function') {
+            startSharedMarket();
+            lastMarketUpdate = now; // 重複実行防止
+        }
+    }
+}, 10000);
 
 /* ─── チュートリアル関数 ─── */
 function startTutorial() {
