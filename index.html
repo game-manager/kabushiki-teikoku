@@ -3070,6 +3070,13 @@ function tickPrices() {
         let newPrice = prev * (1 + baseDrift + eventImpact);
         newPrice = Math.max(newPrice, 1);
         newPrice = Math.round(newPrice);
+        
+        // 前後10万円の範囲内に制限
+        const initialPrice = s.basePrice;
+        const minPrice = Math.max(1, initialPrice - 100000);
+        const maxPrice = initialPrice + 100000;
+        newPrice = Math.min(Math.max(newPrice, minPrice), maxPrice);
+
         stockPrices[s.id] = newPrice;
  
         if (!priceHistory[s.id]) priceHistory[s.id] = [];
@@ -3232,7 +3239,13 @@ function calculateNextMarketState(state, now) {
             : 0;
         const baseDrift = (Math.random() - 0.498) * volatility;
         const eventImpact = (multiplier - 1.0 + stabilityGuard) * 0.1;
-        const newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift)));
+        let newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift)));
+        
+        // 前後10万円の範囲内に制限
+        const initialPrice = s.basePrice;
+        const minPrice = Math.max(1, initialPrice - 100000);
+        const maxPrice = initialPrice + 100000;
+        newPrice = Math.min(Math.max(newPrice, minPrice), maxPrice);
 
         prices[s.id] = newPrice;
         const hist = Array.isArray(history[s.id]) ? history[s.id].slice(-59) : [];
