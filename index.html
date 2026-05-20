@@ -1453,6 +1453,9 @@ let isMarketLeader = false;
 let allStocks      = [...FAMOUS_STOCKS];
 let marketFilter   = 'real';
 let lastBonusDate  = null;
+let lastTaxDate    = null; // 最後に税金を支払った日時
+const TAX_INTERVAL = 30 * 60 * 1000; // 30分 (ミリ秒)
+const TAX_RATE     = 0.02; // 税率 2% (総資産に対して)
 let allPlayers     = {};
 let currentUsername = '';
 let allCompanies   = [];
@@ -1766,6 +1769,7 @@ function saveToLocalStorage() {
         balance, holdings, company: userCompany || null,
         history: tradeHistory,
         lastBonusDate: lastBonusDate || null,
+        lastTaxDate: lastTaxDate || null,
         username: currentUsername || '',
     }));
 }
@@ -1780,6 +1784,7 @@ function loadFromLocalStorage() {
             holdings     = data.holdings ?? {};
             tradeHistory = data.history ?? [];
             lastBonusDate = data.lastBonusDate || null;
+            lastTaxDate = data.lastTaxDate || null;
             currentUsername = data.username || '';
             if (data.company) userCompany = normalizeCompany(data.company);
         } catch { /* corrupt data, use defaults */ }
@@ -1798,6 +1803,7 @@ async function loadUserData() {
         holdings = data.holdings ?? {};
         tradeHistory = data.history ? Object.values(data.history) : [];
         lastBonusDate = data.lastBonusDate || null;
+        lastTaxDate = data.lastTaxDate || null;
         currentUsername = data.username || '';
         if (data.company) userCompany = normalizeCompany(data.company);
     }
@@ -1812,6 +1818,7 @@ async function saveUserData() {
         await update(dbRef(db, `stock_users/${uid}`), {
             balance, holdings,
             lastBonusDate,
+            lastTaxDate,
             username: currentUsername
         });
         saveToLocalStorage();
@@ -1829,6 +1836,47 @@ function updateBalanceDisplay() {
 function updateUsernameDisplay() {
     document.getElementById('user-name-display').textContent = currentUsername || '名無しプレイヤー';
 }
+
+/* ─── 税金徴収システム ─── */
+function checkAndApplyTax() {
+    if (!currentUser) return;
+    
+    const now = Date.now();
+    // 最後に税金を支払ってから30分経過しているかチェック
+    if (!lastTaxDate) {
+        lastTaxDate = now; // 初回ログイン時は現在時刻をセット
+        saveUserData();
+        return;
+    }
+
+    const elapsed = now - lastTaxDate;
+    if (elapsed >= TAX_INTERVAL) {
+        // 総資産の計算
+        let totalAssets = balance;
+        Object.entries(holdings).forEach(([id, h]) => {
+            const price = stockPrices[id] || 0;
+            totalAssets += (h.qty || 0) * price;
+        });
+
+        const taxAmount = Math.floor(totalAssets * TAX_RATE);
+        if (taxAmount > 0) {
+            balance -= taxAmount;
+            if (balance < 0) balance = 0; // 借金にはならない（所持金から引く）
+            
+            lastTaxDate = now;
+            updateBalanceDisplay();
+            saveUserData();
+            
+            showToast(`【納税】総資産の2%（${formatYen(taxAmount)}）が税金として徴収されました。`, 'warning');
+        } else {
+            lastTaxDate = now;
+            saveUserData();
+        }
+    }
+}
+
+// 1分ごとに税金チェックを実行
+setInterval(checkAndApplyTax, 60000);
 
 /* ─── プロフィール編集機能 ─── */
 window.initSettingsTab = function() {
