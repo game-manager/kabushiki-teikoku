@@ -3291,18 +3291,28 @@ function calculateNextMarketState(state, now) {
 
     allStocks.forEach(s => {
         const prev = prices[s.id] || s.basePrice;
-        const volatility = s.isUserCompany ? 0.015 : 0.025;
+        // プレイヤー企業のボラティリティを大幅に引き上げ（0.015 -> 0.06）
+        const volatility = s.isUserCompany ? 0.06 : 0.025;
         const multiplier = activeEvents[s.id]?.multiplier || 1.0;
         const stats = s.companyStats || {};
+        
+        // ステータスによる上昇効果を少し抑える
         const statDrift = s.isUserCompany
-            ? ((stats.technology || 0) * 0.00005) + ((stats.brand || 0) * 0.00003) + ((stats.trust || 0) * 0.00002)
+            ? ((stats.technology || 0) * 0.00004) + ((stats.brand || 0) * 0.00002) + ((stats.trust || 0) * 0.00001)
             : 0;
+            
+        // 安定化ガードを大幅に弱体化（0.002 -> 0.0005）
         const stabilityGuard = s.isUserCompany && multiplier < 1
-            ? Math.min(0.04, (stats.trust || 0) * 0.002)
+            ? Math.min(0.01, (stats.trust || 0) * 0.0005)
             : 0;
+            
+        // 高価格帯（150万以上）での強い下落圧力（利確売りシミュレーション）
+        const profitTakingPressure = (s.isUserCompany && prev > 1500000) ? -0.015 : 0;
+        
         const baseDrift = (Math.random() - 0.5) * volatility;
         const eventImpact = (multiplier - 1.0 + stabilityGuard) * 0.1;
-        let newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift)));
+        
+        let newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift + profitTakingPressure)));
         
         // 1,000円〜200万円の範囲内に制限
         const minPrice = 1000;
