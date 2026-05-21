@@ -3306,13 +3306,22 @@ function calculateNextMarketState(state, now) {
             ? Math.min(0.01, (stats.trust || 0) * 0.0005)
             : 0;
             
-        // 高価格帯（150万以上）での強い下落圧力（利確売りシミュレーション）
-        const profitTakingPressure = (s.isUserCompany && prev > 1500000) ? -0.015 : 0;
+        // 100万円を強力なレジスタンスライン（抵抗線）に設定
+        let resistancePressure = 0;
+        if (s.isUserCompany) {
+            if (prev > 1000000) {
+                // 100万円を超えると非常に強力な売り圧力（-5%）
+                resistancePressure = -0.05;
+            } else if (prev > 800000) {
+                // 80万円を超えると段階的に売り圧力が強まる
+                resistancePressure = -0.015;
+            }
+        }
         
         const baseDrift = (Math.random() - 0.5) * volatility;
         const eventImpact = (multiplier - 1.0 + stabilityGuard) * 0.1;
         
-        let newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift + profitTakingPressure)));
+        let newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift + resistancePressure)));
         
         // 1,000円〜200万円の範囲内に制限
         const minPrice = 1000;
