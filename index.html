@@ -1571,7 +1571,7 @@ let tutorialCompleted = false;
 const TUTORIAL_STEPS = [
     {
         title: '株式帝国へようこそ',
-        description: 'これから、あなたの投資人生が始まります。初期資金は200万円。購入、売却を繰り返して、資産を増やしましょう！',
+        description: 'これから、あなたの投資人生が始まります。初期資金は1,000万円。購入、売却を繰り返して、資産を増やしましょう！',
         highlight: null,
         action: null
     },
@@ -2631,8 +2631,8 @@ window.createCompany = async function() {
     if (nameError) { showToast(nameError, 'error'); return; }
     const tickerError = validateTicker(ticker);
     if (tickerError) { showToast(tickerError, 'error'); return; }
-    if (isNaN(price) || price < 100 || price > 100000) { showToast('価格は100〜100,000円の間です', 'error'); return; }
-    if (balance < 1000000) { showToast('設立費用1,000,000円が不足しています', 'error'); return; }
+    if (isNaN(price) || price < 100 || price > 2000000) { showToast('価格は100〜2,000,000円の間です', 'error'); return; }
+    if (balance < 2000000) { showToast('設立費用2,000,000円が不足しています', 'error'); return; }
  
     if (userCompany) { showToast('既に会社を所有しています', 'error'); return; }
  
@@ -2655,7 +2655,7 @@ window.createCompany = async function() {
     };
  
     try {
-        balance -= 1000000;
+        balance -= 2000000;
         userCompany = newCompany;
         
         // Firebaseに保存
@@ -3578,7 +3578,11 @@ const EVENT_TEMPLATES = [
     { title: "不祥事発覚", body: "で大規模な不祥事が発覚しました。信頼が失墜しています。", impact: 0.6, type: "down" },
     { title: "リコール発表", body: "が主力製品のリコールを発表しました。多額の損失が見込まれます。", impact: 0.7, type: "down" },
     { title: "サイバー攻撃", body: "が大規模なサイバー攻撃を受け、サービスが停止しています。", impact: 0.8, type: "down" },
-    { title: "技術革新", body: "が画期的な新技術を開発しました。業界の勢力図を塗り替える可能性があります。", impact: 1.4, type: "up" }
+    { title: "技術革新", body: "が画期的な新技術を開発しました。業界の勢力図を塗り替える可能性があります。", impact: 1.4, type: "up" },
+    { title: "【バブル到来】", body: "に投資マネーが集中！異常な買い気配を見せています。", impact: 3.5, type: "up" },
+    { title: "【バブル崩壊】", body: "の過熱感がピークに達し、パニック売りが発生しています。", impact: 0.15, type: "down" },
+    { title: "【世紀の発明】", body: "が世界を変える発明を発表。株価は未知の領域へ！", impact: 5.0, type: "up" },
+    { title: "【倒産危機】", body: "に債務超過の疑い。市場から見放されようとしています。", impact: 0.05, type: "down" }
 ];
 
 const PRODUCTS = ["デバイス", "ソフトウェア", "エンジン", "プラットフォーム", "AIチップ", "サービス"];
