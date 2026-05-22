@@ -20,6 +20,30 @@
             display: flex; align-items: center; justify-content: center;
             min-height: 100vh;
             background: radial-gradient(ellipse at center, #0f1829 0%, #0a0e17 70%);
+            padding: 20px;
+        }
+        .login-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            max-width: 900px;
+            width: 100%;
+        }
+        .login-character {
+            flex: 1;
+            max-width: 400px;
+            display: none; /* スマホでは非表示 */
+        }
+        .login-character img {
+            width: 100%;
+            height: auto;
+            filter: drop-shadow(0 0 20px rgba(96, 165, 250, 0.3));
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-15px); }
         }
         .login-box {
             background: #111827;
@@ -28,6 +52,10 @@
             padding: 40px 36px;
             width: 100%; max-width: 400px;
             box-shadow: 0 8px 32px #0008;
+            flex-shrink: 0;
+        }
+        @media (min-width: 768px) {
+            .login-character { display: block; }
         }
         .login-box h1 {
             text-align: center; color: #60a5fa;
@@ -876,6 +904,24 @@
             padding: 3px 10px; border-radius: 12px;
             margin-bottom: 8px; letter-spacing: 0.5px;
         }
+        .tutorial-content-wrapper {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+        .tutorial-character-img {
+            width: 70px;
+            height: 70px;
+            object-fit: contain;
+            flex-shrink: 0;
+            background: #1e293b;
+            border-radius: 50%;
+            padding: 5px;
+            border: 2px solid #3b82f6;
+        }
+        .tutorial-text-content {
+            flex: 1;
+        }
         .tutorial-title {
             font-size: 16px; font-weight: bold; color: #e0e8f0;
             margin-bottom: 8px; letter-spacing: 0.5px;
@@ -933,11 +979,15 @@
 <body>
  
 <div id="login-screen">
-    <div class="login-box">
-        <div style="text-align: center; margin-bottom: 24px;">
-            <img src="logo.png" alt="株式帝国" style="height: 120px; width: auto; display: inline-block;">
+    <div class="login-container">
+        <div class="login-character">
+            <img src="character.png" alt="公式キャラクター">
         </div>
-        <div class="subtitle">株式帝国へようこそ</div>
+        <div class="login-box">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <img src="logo.png" alt="株式帝国" style="height: 80px; width: auto; display: inline-block;">
+            </div>
+            <div class="subtitle">株式帝国へようこそ</div>
         
         <div class="form-group" id="username-group" style="display:none;">
             <label>ユーザー名</label>
@@ -1349,8 +1399,13 @@
 <!-- チュートリアルツールチップ -->
 <div class="tutorial-tooltip" id="tutorial-tooltip">
     <div class="tutorial-step-number" id="tutorial-step-number">STEP 1</div>
-    <div class="tutorial-title" id="tutorial-title">チュートリアルへようこそ</div>
-    <div class="tutorial-description" id="tutorial-description">チュートリアルの説明がここに表示されます。</div>
+    <div class="tutorial-content-wrapper">
+        <img src="character.png" alt="キャラクター" class="tutorial-character-img">
+        <div class="tutorial-text-content">
+            <div class="tutorial-title" id="tutorial-title">チュートリアルへようこそ</div>
+            <div class="tutorial-description" id="tutorial-description">チュートリアルの説明がここに表示されます。</div>
+        </div>
+    </div>
     <div class="tutorial-buttons">
         <button class="tutorial-skip-btn" onclick="skipTutorial()">スキップ</button>
         <button class="tutorial-next-btn" id="tutorial-next-btn" onclick="nextTutorialStep()">次へ</button>
@@ -1570,50 +1625,50 @@ let tutorialCompleted = false;
 
 const TUTORIAL_STEPS = [
     {
-        title: '株式帝国へようこそ',
-        description: 'これから、あなたの投資人生が始まります。初期資金は1,000万円。購入、売却を繰り返して、資産を増やしましょう！',
+        title: '株式帝国へようこそ！',
+        description: 'ボクは株式帝国の公式案内役だワン！これからキミの投資人生が始まるよ。初期資金は1,000万円！しっかり増やしていこうね！',
         highlight: null,
         action: null
     },
     {
-        title: '購入方法',
-        description: '株を購入するには、株上で数量を入力して「購入」ボタンを押します。残高を超えない範囲内だけ購入できます。',
+        title: '株を買ってみよう',
+        description: '株を買うときは、数量を入力して「買う」ボタンを押すだけ！残高の範囲内で好きなだけ買えるよ。',
         highlight: '.stock-card',
         action: 'highlight_stock'
     },
     {
-        title: '売却方法',
-        description: '保有している株を売却するには、株上で数量を入力して「売却」ボタンを押します。利益を確実にして売却しましょう！',
+        title: '株を売ってみよう',
+        description: '持っている株を売るときは「売る」ボタンだワン！利益が出ているタイミングを見極めてね！',
         highlight: '.stock-card.user-company',
         action: 'highlight_owned_stock'
     },
     {
-        title: 'イベント',
-        description: 'ゲーム中に様々なイベントが発生します。企業の好材料や悪材料により株価が変動します。画面右上の通知を確認して、市場の動きに対応しましょう！',
+        title: '市場のニュースをチェック',
+        description: 'ゲーム中は色んなニュースが飛び込んでくるよ。株価がドカンと上がるチャンスもあれば、暴落のピンチも…！通知は見逃さないでね！',
         highlight: null,
         action: null
     },
     {
-        title: '株価詳細の確認',
-        description: 'マーケットの株カードをクリックすると、その企業の詳細画面が開きます。過去の株価推移、現在の価格、高値・安値などを確認できます。詳細情報をもとに投資判断を行いましょう！',
+        title: '詳しく調べる',
+        description: '株のカードをクリックすると、もっと詳しい情報が見れるよ。過去の動きをチェックして、次のチャンスを狙おう！',
         highlight: '.stock-card',
         action: 'highlight_stock'
     },
     {
-        title: 'ポートフォリオ',
-        description: '「ポートフォリオ」タブで、保有株を一覧表示できます。保有株の銘柄、余財、銘柄率などを確認しましょう。',
+        title: 'キミの資産状況',
+        description: '「ポートフォリオ」タブでは、今どれくらい儲かっているか一目でわかるよ。こまめにチェックしてね！',
         highlight: '[data-tab="portfolio"]',
         action: 'highlight_tab'
     },
     {
-        title: '設定画面',
-        description: '「設定」タブで、ユーザー名、メール、パスワードを変更できます。投資を楽しみましょう！',
+        title: '設定変更',
+        description: '「設定」タブからは、キミの名前やメールアドレスを変えられるよ。準備ができたら、さっそく投資を始めよう！',
         highlight: '[data-tab="settings"]',
         action: 'highlight_tab'
     },
     {
-        title: 'チュートリアル完了',
-        description: 'これでチュートリアルは完了です！いつでも「設定」タブを開いて「チュートリアルを再開」を押すと、もう一度確認できます。機会をいかして、投資を楽しみましょう！',
+        title: 'チュートリアル完了！',
+        description: 'これでバッチリだね！もし忘れたら、設定画面からいつでもボクを呼んでね。それじゃあ、億万長者を目指して頑張るワン！',
         highlight: null,
         action: null
     }
