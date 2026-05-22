@@ -2627,76 +2627,32 @@ window.hostileTakeover = async function(targetId) {
         showToast(`買収資金が不足しています（必要: ${formatYen(cost)}）`, 'error');
         return;
     }
-    if (!confirm(`敵対的M&Aを仕掛けますか？\n対象: ${targetStock.name}\n費用: ${formatYen(cost)}\n成功すると相手企業を吸収し、市場から消えます。`)) return;
+    if (!confirm(`敵対的M&Aを仕掛けますか？\n対象: ${targetStock.name}\n費用: ${formatYen(cost)}\n相手企業の承認が必要です。`)) return;
 
-    userCompany = normalizeCompany(userCompany);
-    const stats = userCompany.companyStats;
-    const shieldActive = (targetStock.companyEffects?.takeoverShieldUntil || 0) > Date.now();
-    const defenseLevel = Number(targetStock.companyEffects?.takeoverDefense) || 0;
-    const targetDefense = 25
-        + (targetStock.companyStats?.trust || 1) * 3
-        + Math.min(25, Math.round(targetPrice / 1000))
-        + defenseLevel * 8
-        + (shieldActive ? 35 : 0);
-    const attack = 35 + stats.finance * 3 + stats.brand + stats.attention;
-    const rate = Math.max(15, Math.min(85, attack - targetDefense + 45));
-    const success = Math.random() * 100 < rate;
-
-    balance -= cost;
-    if (success) {
-        userCompany.companyStats = applyStatDelta(stats, { finance: 1, brand: 1, attention: 2 });
-        userCompany.absorbedCompanies = [
-            ...(userCompany.absorbedCompanies || []),
-            {
-                id: targetStock.id,
-                name: targetStock.name,
-                ticker: targetStock.ticker,
-                ownerUsername: targetStock.ownerUsername || targetStock.ownerEmail || '他プレイヤー',
-                absorbedAt: Date.now()
-            }
-        ].slice(-10);
-        pushCompanyHistory(`${targetStock.name} を敵対的M&Aで吸収しました`, 'success');
-        await set(dbRef(db, `companies/${targetId}`), null);
-        if (targetStock.ownerUid) {
-            const ownerSnap = await get(dbRef(db, `stock_users/${targetStock.ownerUid}/company`));
-            if (ownerSnap.exists() && ownerSnap.val()?.id === targetId) {
-                await set(dbRef(db, `stock_users/${targetStock.ownerUid}/company`), null);
-            }
-        }
-        await runTransaction(dbRef(db, 'market/state'), (state) => {
-            if (!state) return state;
-            if (state.prices) delete state.prices[targetId];
-            if (state.history) delete state.history[targetId];
-            if (state.activeMultipliers) delete state.activeMultipliers[targetId];
-            state.updatedAt = Date.now();
-            return state;
-        });
-        await persistUserCompany();
-        await applyCompanyMarketImpact({
-            title: '敵対的M&A成立',
-            body: `${userCompany.name} が ${targetStock.name} を敵対的M&Aで吸収。市場に衝撃が走っています。`,
-            type: 'up',
-            multiplier: 1.18,
-            duration: 60000
-        });
-        showToast('敵対的M&Aに成功しました', 'success');
-    } else {
-        userCompany.companyStats = applyStatDelta(stats, { finance: -1, trust: -1, attention: 1 });
-        pushCompanyHistory(`${targetStock.name} への敵対的M&Aに失敗しました`, 'fail');
-        await persistUserCompany();
-        await applyCompanyMarketImpact({
-            title: '敵対的M&A失敗',
-            body: `${userCompany.name} による ${targetStock.name} への買収工作は失敗。市場では経営判断に疑問の声が出ています。`,
-            type: 'down',
-            multiplier: 0.88,
-            duration: 60000
-        });
-        showToast('敵対的M&Aに失敗しました', 'error');
+    try {
+        // 買収提案をデータベースに保存
+        const proposalId = 'proposal_' + Date.now();
+        const proposal = {
+            id: proposalId,
+            proposerId: currentUser.uid,
+            proposerName: userCompany.name,
+            proposerTicker: userCompany.ticker,
+            targetId: targetId,
+            targetName: targetStock.name,
+            targetTicker: targetStock.ticker,
+            targetOwnerId: targetStock.ownerUid,
+            cost: cost,
+            status: 'pending', // pending, accepted, rejected
+            createdAt: Date.now(),
+            respondedAt: null
+        };
+        
+        await set(dbRef(db, `takeoverProposals/${proposalId}`), proposal);
+        showToast(`${targetStock.name} への買収提案を送信しました。相手企業の承認を待っています。`, 'info');
+        updateCompanyStatus();
+    } catch (e) {
+        showToast('買収提案の送信に失敗しました: ' + e.message, 'error');
     }
-
-    updateBalanceDisplay();
-    await initMarket();
-    updateCompanyStatus();
 };
 
 function getPartnerCompany(targetId) {
@@ -2806,6 +2762,115 @@ window.formBusinessAlliance = async function(targetId) {
     await initMarket();
     updateCompanyStatus();
     showToast('業務提携を結びました', 'success');
+};
+
+window.respondToTakeoverProposal = async function(proposalId, accept) {
+    if (!userCompany || !proposalId) return;
+    
+    try {
+        const proposalSnap = await get(dbRef(db, `takeoverProposals/${proposalId}`));
+        if (!proposalSnap.exists()) {
+            showToast('提案が見つかりません', 'error');
+            return;
+        }
+        
+        const proposal = proposalSnap.val();
+        
+        // 対象企業の所有者であることを確認
+        if (proposal.targetOwnerId !== currentUser.uid) {
+            showToast('この提案に対応する権限がありません', 'error');
+            return;
+        }
+        
+        if (accept) {
+            // 承認の場合、買収を実行
+            const proposerSnap = await get(dbRef(db, `stock_users/${proposal.proposerId}/company`));
+            if (!proposerSnap.exists()) {
+                showToast('提案元の企業が見つかりません', 'error');
+                return;
+            }
+            
+            const proposerCompany = normalizeCompany(proposerSnap.val());
+            const targetStock = allStocks.find(s => s.id === proposal.targetId);
+            
+            // 提案元企業の残高確認
+            const proposerUserSnap = await get(dbRef(db, `stock_users/${proposal.proposerId}`));
+            const proposerBalance = proposerUserSnap.val()?.balance || 0;
+            
+            if (proposerBalance < proposal.cost) {
+                showToast('提案元の企業の資金が不足しています', 'error');
+                await update(dbRef(db, `takeoverProposals/${proposalId}`), {
+                    status: 'rejected',
+                    respondedAt: Date.now()
+                });
+                return;
+            }
+            
+            // 買収を実行
+            proposerCompany.companyStats = applyStatDelta(proposerCompany.companyStats, { finance: 1, brand: 1, attention: 2 });
+            proposerCompany.absorbedCompanies = [
+                ...(proposerCompany.absorbedCompanies || []),
+                {
+                    id: proposal.targetId,
+                    name: proposal.targetName,
+                    ticker: proposal.targetTicker,
+                    ownerUsername: userCompany.name,
+                    absorbedAt: Date.now()
+                }
+            ].slice(-10);
+            
+            // 提案元企業の残高を減らす
+            await update(dbRef(db, `stock_users/${proposal.proposerId}`), {
+                balance: proposerBalance - proposal.cost
+            });
+            
+            // 提案元企業のデータを更新
+            await set(dbRef(db, `stock_users/${proposal.proposerId}/company`), proposerCompany);
+            
+            // 対象企業を削除
+            await set(dbRef(db, `companies/${proposal.targetId}`), null);
+            await set(dbRef(db, `stock_users/${proposal.targetOwnerId}/company`), null);
+            
+            // 市場から削除
+            await runTransaction(dbRef(db, 'market/state'), (state) => {
+                if (!state) return state;
+                if (state.prices) delete state.prices[proposal.targetId];
+                if (state.history) delete state.history[proposal.targetId];
+                if (state.activeMultipliers) delete state.activeMultipliers[proposal.targetId];
+                state.updatedAt = Date.now();
+                return state;
+            });
+            
+            // 提案を承認済みに更新
+            await update(dbRef(db, `takeoverProposals/${proposalId}`), {
+                status: 'accepted',
+                respondedAt: Date.now()
+            });
+            
+            // 市場インパクト
+            await applyCompanyMarketImpact({
+                title: '敵対的M&A成立',
+                body: `${proposal.proposerName} が ${proposal.targetName} を敵対的M&Aで吸収。市場に衝撃が走っています。`,
+                type: 'up',
+                multiplier: 1.18,
+                duration: 60000
+            });
+            
+            showToast(`${proposal.targetName} の買収提案を承認しました。`, 'success');
+        } else {
+            // 拒否の場合
+            await update(dbRef(db, `takeoverProposals/${proposalId}`), {
+                status: 'rejected',
+                respondedAt: Date.now()
+            });
+            showToast(`${proposal.proposerName} の買収提案を拒否しました。`, 'info');
+        }
+        
+        await initMarket();
+        updateCompanyStatus();
+    } catch (e) {
+        showToast('提案への対応に失敗しました: ' + e.message, 'error');
+    }
 };
 
 window.launchJointProject = async function(targetId) {
@@ -3769,6 +3834,32 @@ function updateCompanyStatus() {
         `<div class="company-history-item">${a.name} (${a.ticker}) と${a.type === 'business' ? '業務提携' : '連携'}中</div>`
     ).join('') || '<div class="company-history-item">提携中の企業はまだありません。</div>';
 
+    // 買収提案の受け取り表示
+    let incomingProposalsHtml = '<div class="company-history-item">受け取った買収提案はありません。</div>';
+    try {
+        const proposalsSnap = await get(dbRef(db, 'takeoverProposals'));
+        if (proposalsSnap.exists()) {
+            const allProposals = Object.values(proposalsSnap.val());
+            const incomingProposals = allProposals.filter(p => p.targetOwnerId === currentUser.uid && p.status === 'pending');
+            if (incomingProposals.length > 0) {
+                incomingProposalsHtml = incomingProposals.map(p => `
+                    <div class="takeover-row">
+                        <div>
+                            <div class="target-name">${p.proposerName} (${p.proposerTicker}) からの買収提案</div>
+                            <div class="target-meta">提案費用: ${formatYen(p.cost)} / 提案日時: ${new Date(p.createdAt).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+                            <button onclick="respondToTakeoverProposal('${p.id}', true)" style="background:#065f46;border-color:#059669;color:#bbf7d0;">承認</button>
+                            <button onclick="respondToTakeoverProposal('${p.id}', false)" style="background:#7f1d1d;border-color:#dc2626;color:#fca5a5;">拒否</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to load takeover proposals:', e.message);
+    }
+
     companyInfo.innerHTML = `
         <div class="company-dashboard">
             <div class="company-hero">
@@ -3813,6 +3904,11 @@ function updateCompanyStatus() {
             <div>
                 <div class="company-section-title">敵対的M&A / 吸収</div>
                 <div class="takeover-list">${takeoverHtml}</div>
+            </div>
+
+            <div>
+                <div class="company-section-title">受け取った買収提案</div>
+                <div class="takeover-list">${incomingProposalsHtml}</div>
             </div>
 
             <div>
