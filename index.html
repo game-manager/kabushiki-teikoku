@@ -177,7 +177,7 @@
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .stock-card { animation: fadeIn 0.4s ease forwards; }
+        .stock-card.new-card { animation: fadeIn 0.4s ease forwards; }
 
         @media (prefers-reduced-motion: reduce) {
             * {
@@ -3931,7 +3931,6 @@ function updateMarketCounts() {
 /* ─── マーケット描画 ─── */
 function renderMarket() {
     const grid = document.getElementById('stock-grid');
-    grid.innerHTML = '';
     updateMarketCounts();
  
     const filtered = marketFilter === 'real'
@@ -3943,6 +3942,15 @@ function renderMarket() {
             ${marketFilter === 'user' ? 'まだ作成された株式はありません。「会社設立」タブから会社を作れます。' : '株式データがありません'}
         </div>`;
         return;
+    }
+
+    // フィルタ条件が変わった場合や、要素数が異なる場合は一度クリアする（基本は差分更新）
+    const currentFilter = grid.dataset.lastFilter;
+    const currentIds = filtered.map(s => s.id).join(',');
+    if (currentFilter !== marketFilter || grid.dataset.lastIds !== currentIds) {
+        grid.innerHTML = '';
+        grid.dataset.lastFilter = marketFilter;
+        grid.dataset.lastIds = currentIds;
     }
  
     filtered.forEach(s => {
@@ -3959,14 +3967,23 @@ function renderMarket() {
             : '';
 
         const ownerLabel = s.ownerUsername || (s.ownerEmail ? s.ownerEmail.split('@')[0] : '他プレイヤー');
- 
-        const card = document.createElement('div');
-        card.className = 'stock-card' + (isOwn ? ' user-company' : '');
-        
-        // イベント中かチェック
         const isEvent = activeMultipliers[s.id] !== undefined;
+
+        // 既存のカードを探す
+        let card = grid.querySelector(`.stock-card[data-id="${s.id}"]`);
+        let isNew = false;
         
-        card.innerHTML = `
+        if (!card) {
+            // 新規作成
+            card = document.createElement('div');
+            card.className = 'stock-card new-card' + (isOwn ? ' user-company' : '');
+            card.dataset.id = s.id;
+            card.addEventListener('click', () => openStockDetail(s.id));
+            grid.appendChild(card);
+            isNew = true;
+        }
+
+        const contentHtml = `
             <div class="stock-top">
                 <div>
                     <div class="stock-name">${s.name} ${holdingBadge}</div>
@@ -3984,38 +4001,43 @@ function renderMarket() {
             <div class="mini-chart">${buildMiniChart(hist)}</div>
             <div class="stock-actions">
                 <button class="buy-btn" data-id="${s.id}">買う</button>
-                <input type="number" class="inline-qty-input" data-id="${s.id}" value="1" min="1" placeholder="数量">
+                <input type="number" class="inline-qty-input" data-id="${s.id}" value="${card.querySelector('.inline-qty-input')?.value || 1}" min="1" placeholder="数量">
                 <button class="sell-btn" data-id="${s.id}">売る</button>
             </div>
         `;
-        if (isEvent) {
-            card.style.boxShadow = activeMultipliers[s.id] > 1.0 ? "0 0 15px #34d39944" : "0 0 15px #f8717144";
-            card.style.borderColor = activeMultipliers[s.id] > 1.0 ? "#34d39988" : "#f8717188";
+
+        // 内容に変化がある場合のみ更新
+        if (card.innerHTML !== contentHtml) {
+            card.innerHTML = contentHtml;
+            
+            if (isEvent) {
+                card.style.boxShadow = activeMultipliers[s.id] > 1.0 ? "0 0 15px #34d39944" : "0 0 15px #f8717144";
+                card.style.borderColor = activeMultipliers[s.id] > 1.0 ? "#34d39988" : "#f8717188";
+            } else {
+                card.style.boxShadow = "";
+                card.style.borderColor = "";
+            }
+
+            const qtyInput = card.querySelector('.inline-qty-input');
+            qtyInput.addEventListener('click', (e) => e.stopPropagation());
+
+            card.querySelector('.buy-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const qty = parseInt(qtyInput.value) || 0;
+                executeInlineTrade('buy', s.id, qty);
+            });
+
+            card.querySelector('.sell-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const qty = parseInt(qtyInput.value) || 0;
+                executeInlineTrade('sell', s.id, qty);
+            });
         }
-        card.addEventListener('click', () => openStockDetail(s.id));
-        grid.appendChild(card);
-    });
- 
-    grid.querySelectorAll('.inline-qty-input').forEach(input => {
-        input.addEventListener('click', (e) => e.stopPropagation());
-    });
-    grid.querySelectorAll('.buy-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const stockId = btn.dataset.id;
-            const qtyInput = btn.parentElement.querySelector('.inline-qty-input');
-            const qty = parseInt(qtyInput.value) || 0;
-            executeInlineTrade('buy', stockId, qty);
-        });
-    });
-    grid.querySelectorAll('.sell-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const stockId = btn.dataset.id;
-            const qtyInput = btn.parentElement.querySelector('.inline-qty-input');
-            const qty = parseInt(qtyInput.value) || 0;
-            executeInlineTrade('sell', stockId, qty);
-        });
+        
+        // 初回アニメーションが終わったらクラスを外す
+        if (isNew) {
+            setTimeout(() => card.classList.remove('new-card'), 500);
+        }
     });
 }
  
