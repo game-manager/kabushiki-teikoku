@@ -1478,6 +1478,31 @@
                         </div>
                         <button class="admin-btn" onclick="addPlayer()">プレイヤーを作成</button>
                     </div>
+
+                    <div class="admin-card">
+                        <h3>禁止ワード管理</h3>
+                        <div class="admin-form-group">
+                            <label>新しい禁止ワードを追加</label>
+                            <div style="display:flex; gap:8px;">
+                                <input type="text" id="new-blockword" placeholder="例: 不適切語">
+                                <button class="admin-btn" onclick="addBlockWord()" style="white-space:nowrap; width:auto;">追加</button>
+                            </div>
+                        </div>
+                        <div style="margin-top:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <label>現在の禁止ワード一覧</label>
+                                <button class="admin-btn warning" id="toggle-blockwords-btn" onclick="toggleBlockWordsVisibility()" style="font-size:11px; padding:4px 8px; width:auto;">表示する</button>
+                            </div>
+                            <div id="blockwords-container" style="display:none; background:rgba(0,0,0,0.2); border-radius:4px; padding:8px; max-height:150px; overflow-y:auto; border:1px solid rgba(255,255,255,0.1);">
+                                <div id="blockwords-list" style="display:flex; flex-wrap:wrap; gap:6px;">
+                                    <!-- 動的に生成 -->
+                                </div>
+                            </div>
+                            <div id="blockwords-placeholder" style="text-align:center; padding:12px; color:rgba(255,255,255,0.4); font-size:12px; background:rgba(0,0,0,0.1); border-radius:4px;">
+                                セキュリティのため非表示になっています
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="admin-card" style="margin-bottom:30px;">
@@ -1708,13 +1733,90 @@ let lastSharedEventId = null;
 
 const COMPANY_STAT_MAX = 20;
 const COMPANY_ACTION_COOLDOWN = 5 * 60 * 1000;
-const NAME_BLOCKLIST = [
+let NAME_BLOCKLIST = [
     '死ね', '殺す', '殺害', '爆破', 'テロ', '犯罪', '詐欺', '麻薬', '覚醒剤',
     'くそ', 'クソ', 'ばか', 'バカ', 'アホ', 'fuck', 'shit', 'bitch', 'asshole',
     'sex', 'porn', 'nazi', 'hitler', 'admin', '管理者', '運営', '公式',
-    '大久保', 'おおくぼ', 'オオクボ', 'ookubo', 'okubo',
-    'まんこ', 'ちんこ', 'おまんこ', 'おちんこ', 'うんこ', 'クリトリス', 'フェラ', '本番', '援交', '売春', '非行', '乱交', '近親', '獣姦', 'スカトロ', 'バイブ', 'ローター', 'オナニー', '射精', '中出し', '潮吹き'
+    '大久保', 'おおくぼ', 'オオクボ', 'ookubo', 'okubo'
 ];
+
+// Firebaseから禁止ワードを読み込む
+function initBlockWords() {
+    const blockWordsRef = dbRef(db, 'settings/blockwords');
+    onValue(blockWordsRef, (snapshot) => {
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            // 配列として扱う（オブジェクトの場合は値の配列にする）
+            NAME_BLOCKLIST = Array.isArray(data) ? data : Object.values(data);
+            updateBlockWordsUI();
+        } else {
+            // 初回実行時などにデフォルトリストを保存
+            set(blockWordsRef, NAME_BLOCKLIST);
+        }
+    });
+}
+
+function updateBlockWordsUI() {
+    const listEl = document.getElementById('blockwords-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    NAME_BLOCKLIST.forEach((word, index) => {
+        const tag = document.createElement('div');
+        tag.style.cssText = 'background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:12px; font-size:12px; display:flex; align-items:center; gap:4px;';
+        tag.innerHTML = `
+            <span>${word}</span>
+            <span onclick="removeBlockWord('${word}')" style="cursor:pointer; color:#f87171; font-weight:bold;">×</span>
+        `;
+        listEl.appendChild(tag);
+    });
+}
+
+window.toggleBlockWordsVisibility = function() {
+    const container = document.getElementById('blockwords-container');
+    const placeholder = document.getElementById('blockwords-placeholder');
+    const btn = document.getElementById('toggle-blockwords-btn');
+    const isHidden = container.style.display === 'none';
+    
+    if (isHidden) {
+        container.style.display = 'block';
+        placeholder.style.display = 'none';
+        btn.textContent = '非表示にする';
+    } else {
+        container.style.display = 'none';
+        placeholder.style.display = 'block';
+        btn.textContent = '表示する';
+    }
+};
+
+window.addBlockWord = async function() {
+    const input = document.getElementById('new-blockword');
+    const word = input.value.trim();
+    if (!word) return;
+    if (NAME_BLOCKLIST.includes(word)) {
+        showToast('既に登録されています', 'warning');
+        return;
+    }
+    
+    const newList = [...NAME_BLOCKLIST, word];
+    try {
+        await set(dbRef(db, 'settings/blockwords'), newList);
+        input.value = '';
+        showToast('禁止ワードを追加しました', 'success');
+    } catch (e) {
+        showToast('追加に失敗しました', 'error');
+    }
+};
+
+window.removeBlockWord = async function(word) {
+    if (!confirm(`「${word}」を禁止ワードから削除しますか？`)) return;
+    const newList = NAME_BLOCKLIST.filter(w => w !== word);
+    try {
+        await set(dbRef(db, 'settings/blockwords'), newList);
+        showToast('禁止ワードを削除しました', 'success');
+    } catch (e) {
+        showToast('削除に失敗しました', 'error');
+    }
+};
 
 function validateInputName(name) {
     const normalized = String(name || '').trim().toLowerCase().replace(/\s+/g, '');
@@ -4618,13 +4720,11 @@ const ProfileManager = {
             return sum + (price * h.qty);
         }, 0);
     }
-};
-
-// 既存の初期化処理にフック
+};// 既存の初期化処理にフック
 function initUpgrade() {
     ThemeManager.init();
     ProfileManager.update();
-    
+    initBlockWords();
     // 資産が変わるタイミングでプロフィール更新（簡易的に定期実行）
     setInterval(() => ProfileManager.update(), 5000);
 }
