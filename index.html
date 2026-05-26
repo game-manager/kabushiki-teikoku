@@ -3451,11 +3451,19 @@ async function checkForWarnings() {
 async function initMarket() {
     allStocks = [...FAMOUS_STOCKS];
  
+    // 初回読み込み時にリアル株価を取得（マーケットリーダー以外でも表示用に一度取得）
+    let initialRealPrices = null;
+    try {
+        initialRealPrices = await fetchRealStockPrices();
+    } catch (e) {
+        console.warn('Initial real price fetch failed:', e.message);
+    }
+
     FAMOUS_STOCKS.forEach(s => {
         if (!stockPrices[s.id]) {
-            stockPrices[s.id] = s.basePrice;
-            priceHistory[s.id] = Array(40).fill(0).map(() =>
-                s.basePrice + (Math.random() - 0.5) * s.basePrice * 0.02
+            stockPrices[s.id] = (initialRealPrices && initialRealPrices[s.id]) ? initialRealPrices[s.id] : s.basePrice;
+            priceHistory[s.id] = Array(40).fill(stockPrices[s.id]).map((p) =>
+                Math.round(p + (Math.random() - 0.5) * p * 0.02)
             );
         }
     });
@@ -3636,20 +3644,80 @@ function buildInitialMarketState(baseState = {}) {
 }
 
 let lastTickTime = 0;
+/* ─── Yahoo Finance 連携設定 ─── */
+const TICKER_MAP = {
+    'AAPL': 'AAPL', 'GOOGL': 'GOOGL', 'AMZN': 'AMZN', 'MSFT': 'MSFT', 'TSLA': 'TSLA',
+    'META': 'META', 'NVDA': 'NVDA',
+    'SBG': '9984.T', 'KDDI': '9433.T', 'NFLX': 'NFLX', 'DIS': 'DIS', 'KO': 'KO',
+    'MCD': 'MCD', 'V': 'V', 'JPM': 'JPM', 'UNH': 'UNH', 'PFE': 'PFE',
+    'ASML': 'ASML', 'TSM': 'TSM', '7203': '7203.T', '8306': '8306.T', '6758': '6758.T',
+    '9983': '9983.T', '7974': '7974.T', '9432': '9432.T', '6501': '6501.T',
+    '8058': '8058.T', '9020': '9020.T', '6861': '6861.T',
+    'TM': '7203.T', 'SONY': '6758.T', 'NTDOY': '7974.T'
+};
+
+let lastRealPriceFetch = 0;
+const REAL_PRICE_FETCH_INTERVAL = 60 * 1000; // 1分ごとに取得
+
+async function fetchRealStockPrices() {
+    const tickers = Object.values(TICKER_MAP);
+    tickers.push('USDJPY=X');
+    
+    const results = {};
+    let usdjpy = 150;
+
+    // バッチ処理（プロキシへの負荷軽減）
+    const batchSize = 8;
+    for (let i = 0; i < tickers.length; i += batchSize) {
+        const batch = tickers.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (ticker) => {
+            const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
+            const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}&_=${Date.now()}`;
+            
+            try {
+                const response = await fetch(url);
+                if (!response.ok) return;
+                const data = await response.json();
+                const meta = data.chart.result[0].meta;
+                if (ticker === 'USDJPY=X') {
+                    usdjpy = meta.regularMarketPrice;
+                } else {
+                    results[ticker] = { price: meta.regularMarketPrice, currency: meta.currency };
+                }
+            } catch (e) {}
+        }));
+        if (i + batchSize < tickers.length) await new Promise(r => setTimeout(r, 300));
+    }
+
+    const realPrices = {};
+    Object.entries(TICKER_MAP).forEach(([id, ticker]) => {
+        const res = results[ticker];
+        if (res) {
+            realPrices[id] = res.currency === 'USD' ? Math.round(res.price * usdjpy) : Math.round(res.price);
+        }
+    });
+    return realPrices;
+}
+
 async function tickSharedMarketAsLeader() {
     const now = Date.now();
-    // 前回の更新から1秒以上経過していない場合はスキップ（過剰な更新を防止）
     if (now - lastTickTime < 1000) return;
     
     const stateRef = dbRef(db, 'market/state');
     try {
         const snap = await get(stateRef);
         const state = buildInitialMarketState(snap.exists() ? snap.val() : {});
-        
-        // データの更新時刻を確認し、他の誰かが既に最近更新していないかチェック
         if (state.updatedAt && now - state.updatedAt < 1000) return;
         
-        const nextState = calculateNextMarketState(state, now);
+        // リアル株価の取得
+        let realPrices = null;
+        if (now - lastRealPriceFetch > REAL_PRICE_FETCH_INTERVAL) {
+            realPrices = await fetchRealStockPrices();
+            lastRealPriceFetch = now;
+            console.log('Real prices fetched:', realPrices);
+        }
+
+        const nextState = calculateNextMarketState(state, now, realPrices);
         await set(stateRef, nextState);
         lastTickTime = now;
     } catch (e) {
@@ -3687,7 +3755,7 @@ async function ensureSharedStockInMarket(company) {
     }
 }
 
-function calculateNextMarketState(state, now) {
+function calculateNextMarketState(state, now, realPrices) {
     const prices = { ...state.prices };
     const history = { ...state.history };
     const activeEvents = {};
@@ -3708,37 +3776,39 @@ function calculateNextMarketState(state, now) {
 
     allStocks.forEach(s => {
         const prev = prices[s.id] || s.basePrice;
-        // プレイヤー企業のボラティリティを大幅に引き上げ（0.015 -> 0.06）
-        const volatility = s.isUserCompany ? 0.06 : 0.025;
-        const multiplier = activeEvents[s.id]?.multiplier || 1.0;
-        const stats = s.companyStats || {};
-        
-        // ステータスによる上昇効果を少し抑える
-        const statDrift = s.isUserCompany
-            ? ((stats.technology || 0) * 0.00004) + ((stats.brand || 0) * 0.00002) + ((stats.trust || 0) * 0.00001)
-            : 0;
+        let newPrice;
+
+        if (!s.isUserCompany && realPrices && realPrices[s.id]) {
+            // リアル株価が取得できている主要企業の場合、その価格を反映
+            newPrice = realPrices[s.id];
+        } else {
+            // プレイヤー企業、またはリアル株価が取得できなかった主要企業の場合、シミュレーション
+            const volatility = s.isUserCompany ? 0.06 : 0.025;
+            const multiplier = activeEvents[s.id]?.multiplier || 1.0;
+            const stats = s.companyStats || {};
             
-        // 安定化ガードを大幅に弱体化（0.002 -> 0.0005）
-        const stabilityGuard = s.isUserCompany && multiplier < 1
-            ? Math.min(0.01, (stats.trust || 0) * 0.0005)
-            : 0;
-            
-        // 100万円を強力なレジスタンスライン（抵抗線）に設定
-        let resistancePressure = 0;
-        if (s.isUserCompany) {
-            if (prev > 1000000) {
-                // 100万円を超えると非常に強力な売り圧力（-5%）
-                resistancePressure = -0.05;
-            } else if (prev > 800000) {
-                // 80万円を超えると段階的に売り圧力が強まる
-                resistancePressure = -0.015;
+            const statDrift = s.isUserCompany
+                ? ((stats.technology || 0) * 0.00004) + ((stats.brand || 0) * 0.00002) + ((stats.trust || 0) * 0.00001)
+                : 0;
+                
+            const stabilityGuard = s.isUserCompany && multiplier < 1
+                ? Math.min(0.01, (stats.trust || 0) * 0.0005)
+                : 0;
+                
+            let resistancePressure = 0;
+            if (s.isUserCompany) {
+                if (prev > 1000000) {
+                    resistancePressure = -0.05;
+                } else if (prev > 800000) {
+                    resistancePressure = -0.015;
+                }
             }
+            
+            const baseDrift = (Math.random() - 0.5) * volatility;
+            const eventImpact = (multiplier - 1.0 + stabilityGuard) * 0.1;
+            
+            newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift + resistancePressure)));
         }
-        
-        const baseDrift = (Math.random() - 0.5) * volatility;
-        const eventImpact = (multiplier - 1.0 + stabilityGuard) * 0.1;
-        
-        let newPrice = Math.max(1, Math.round(prev * (1 + baseDrift + eventImpact + statDrift + resistancePressure)));
         
         // 1,000円〜200万円の範囲内に制限
         const minPrice = 1000;
@@ -3830,6 +3900,15 @@ async function applySharedMarketState(state) {
     updatePortfolio();
     if (selectedStockId) renderStockDetail(selectedStockId);
     await updateCompanyStatus();
+    
+    // 更新時間の表示
+    const timeEl = document.getElementById('market-time');
+    if (timeEl) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        const realStr = lastRealPriceFetch > 0 ? ` (リアル株価連動中: ${new Date(lastRealPriceFetch).toLocaleTimeString()})` : '';
+        timeEl.textContent = `最終更新: ${timeStr}${realStr}`;
+    }
 }
 
 async function updateCompanyStatus() {
