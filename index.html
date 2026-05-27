@@ -855,6 +855,69 @@
         }
         .player-action-btn.delete:hover { background: var(--negative); }
 
+        .ranking-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+        .ranking-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            padding: 18px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .ranking-header h2 { font-size: 20px; margin: 0 0 6px; }
+        .ranking-header p {
+            margin: 0;
+            color: var(--text-sub);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .ranking-refresh-btn {
+            padding: 9px 14px;
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            background: rgba(96, 165, 250, 0.12);
+            color: var(--accent);
+            font-weight: bold;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .ranking-refresh-btn:hover { background: var(--accent-hover); color: #fff; }
+        .ranking-table { width: 100%; border-collapse: collapse; }
+        .ranking-table th {
+            background: var(--bg-input);
+            color: var(--text-sub);
+            font-size: 11px;
+            letter-spacing: 1px;
+            padding: 12px 16px;
+            text-align: left;
+        }
+        .ranking-table td {
+            padding: 14px 16px;
+            border-top: 1px solid var(--border);
+            font-size: 13px;
+        }
+        .ranking-table tr.is-current td { background: rgba(96, 165, 250, 0.1); }
+        .ranking-rank {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--accent);
+        }
+        .ranking-reward {
+            color: var(--positive);
+            font-weight: bold;
+        }
+        @media (max-width: 700px) {
+            .ranking-header { align-items: stretch; flex-direction: column; }
+            .ranking-table th:nth-child(4),
+            .ranking-table td:nth-child(4) { display: none; }
+        }
+
         /* ─── 警告モーダル ─── */
         .warning-modal-overlay {
             display: none; position: fixed;
@@ -1218,6 +1281,7 @@
     <div class="tab-nav">
         <button class="tab-btn active" data-tab="market">マーケット</button>
         <button class="tab-btn" data-tab="portfolio">ポートフォリオ</button>
+        <button class="tab-btn" data-tab="ranking">ランキング</button>
         <button class="tab-btn" data-tab="company">会社設立</button>
         <button class="tab-btn" data-tab="settings">設定</button>
     </div>
@@ -1331,6 +1395,32 @@
                     <!-- JSで生成 -->
                 </tbody>
             </table>
+        </div>
+
+        <div id="tab-ranking" class="tab-content">
+            <div class="ranking-panel">
+                <div class="ranking-header">
+                    <div>
+                        <h2>総資産ランキング</h2>
+                        <p>所持金と保有株の評価額を合計したランキングです。1位は毎日100,000円、2位は50,000円、3位は10,000円を受け取れます。</p>
+                    </div>
+                    <button class="ranking-refresh-btn" onclick="refreshTotalAssetRanking({ applyRewards: true })">更新</button>
+                </div>
+                <table class="ranking-table">
+                    <thead>
+                        <tr>
+                            <th>順位</th>
+                            <th>プレイヤー</th>
+                            <th>総資産</th>
+                            <th>所持金</th>
+                            <th>本日の報酬</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ranking-body">
+                        <tr><td colspan="5" style="text-align:center;color:#6b7280;padding:32px;">ランキングを読み込み中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
  
         <!-- 会社設立 -->
@@ -1720,6 +1810,8 @@ let allStocks      = [...FAMOUS_STOCKS];
 let marketFilter   = 'real';
 let lastBonusDate  = null;
 let lastTaxDate    = null; // 最後に税金を支払った日時
+let lastRankingRewardDate = null;
+let lastRankingRewardRank = null;
 const TAX_INTERVAL = 24 * 60 * 60 * 1000; // 24時間 (ミリ秒)
 const TAX_RATE     = 0.20; // 税率 20% (総資産に対して)
 let allPlayers     = {};
@@ -2014,6 +2106,8 @@ window.handleAuth = async function() {
                 balance: 2000000,
                 holdings: {},
                 lastBonusDate: null,
+                lastRankingRewardDate: null,
+                lastRankingRewardRank: null,
             });
         }
     } catch (e) {
@@ -2039,6 +2133,8 @@ function resetUserState() {
     tradeHistory  = [];
     userCompany   = null;
     lastBonusDate = null;
+    lastRankingRewardDate = null;
+    lastRankingRewardRank = null;
     currentUsername = '';
     activeMultipliers = {};
     sharedActiveEvents = {};
@@ -2106,6 +2202,7 @@ onAuthStateChanged(auth, async (user) => {
         await initMarket();
         // initMarket完了後にstartSharedMarketを開始（allStocksが正しく初期化された状態で開始）
         startSharedMarket();
+        await refreshTotalAssetRanking({ applyRewards: true });
         checkAndStartTutorial();
     } else {
         stopSharedMarket();
@@ -2131,6 +2228,8 @@ function saveToLocalStorage() {
         history: tradeHistory,
         lastBonusDate: lastBonusDate || null,
         lastTaxDate: lastTaxDate || null,
+        lastRankingRewardDate: lastRankingRewardDate || null,
+        lastRankingRewardRank: lastRankingRewardRank || null,
         username: currentUsername || '',
     }));
 }
@@ -2146,6 +2245,8 @@ function loadFromLocalStorage() {
             tradeHistory = data.history ?? [];
             lastBonusDate = data.lastBonusDate || null;
             lastTaxDate = data.lastTaxDate || null;
+            lastRankingRewardDate = data.lastRankingRewardDate || null;
+            lastRankingRewardRank = data.lastRankingRewardRank || null;
             currentUsername = data.username || '';
             if (data.company) userCompany = normalizeCompany(data.company);
         } catch { /* corrupt data, use defaults */ }
@@ -2165,6 +2266,8 @@ async function loadUserData() {
         tradeHistory = data.history ? Object.values(data.history) : [];
         lastBonusDate = data.lastBonusDate || null;
         lastTaxDate = data.lastTaxDate || null;
+        lastRankingRewardDate = data.lastRankingRewardDate || null;
+        lastRankingRewardRank = data.lastRankingRewardRank || null;
         currentUsername = data.username || '';
         if (data.company) userCompany = normalizeCompany(data.company);
     }
@@ -2180,6 +2283,8 @@ async function saveUserData() {
             balance, holdings,
             lastBonusDate,
             lastTaxDate,
+            lastRankingRewardDate,
+            lastRankingRewardRank,
             username: currentUsername
         });
         saveToLocalStorage();
@@ -2197,6 +2302,161 @@ function updateBalanceDisplay() {
 function updateUsernameDisplay() {
     document.getElementById('user-name-display').textContent = currentUsername || '名無しプレイヤー';
 }
+
+const RANKING_REWARDS = {
+    1: 100000,
+    2: 50000,
+    3: 10000,
+};
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getStockPriceForRanking(stockId) {
+    if (stockPrices[stockId]) return stockPrices[stockId];
+    const stock = allStocks.find(s => s.id === stockId);
+    return stock?.basePrice || stock?.initialPrice || 0;
+}
+
+function calculateTotalAssetsForUser(userData) {
+    const cash = Number(userData?.balance) || 0;
+    const userHoldings = userData?.holdings || {};
+    const stockValue = Object.entries(userHoldings).reduce((sum, [stockId, holding]) => {
+        const qty = Number(holding?.qty) || 0;
+        return sum + (getStockPriceForRanking(stockId) * qty);
+    }, 0);
+
+    return Math.floor(cash + stockValue);
+}
+
+async function applyDailyRankingReward(rank) {
+    if (!currentUser || !RANKING_REWARDS[rank]) return false;
+
+    const today = getTodayStr();
+    if (lastRankingRewardDate === today) return false;
+
+    const reward = RANKING_REWARDS[rank];
+    const userRef = dbRef(db, `stock_users/${currentUser.uid}`);
+    const result = await runTransaction(userRef, (userData) => {
+        if (!userData || userData.lastRankingRewardDate === today) return userData;
+
+        return {
+            ...userData,
+            balance: (Number(userData.balance) || 0) + reward,
+            lastRankingRewardDate: today,
+            lastRankingRewardRank: rank,
+        };
+    });
+
+    const updated = result.snapshot.val();
+    if (!updated || updated.lastRankingRewardDate !== today) return false;
+
+    const wasRewardedNow = lastRankingRewardDate !== today;
+    balance = Number(updated.balance) || balance;
+    lastRankingRewardDate = updated.lastRankingRewardDate || today;
+    lastRankingRewardRank = updated.lastRankingRewardRank || rank;
+    updateBalanceDisplay();
+    saveToLocalStorage();
+
+    if (wasRewardedNow) {
+        showToast(`総資産ランキング${rank}位報酬として${formatYen(reward)}を受け取りました`, 'success');
+    }
+    return wasRewardedNow;
+}
+
+function renderTotalAssetRanking(rows) {
+    const body = document.getElementById('ranking-body');
+    if (!body) return;
+
+    if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:32px;">ランキングデータがありません</td></tr>';
+        return;
+    }
+
+    body.innerHTML = rows.slice(0, 50).map(row => {
+        const reward = RANKING_REWARDS[row.rank] || 0;
+        const playerName = escapeHtml(row.username || row.email || '名無しプレイヤー');
+        const isCurrent = currentUser && row.uid === currentUser.uid;
+        return `
+            <tr class="${isCurrent ? 'is-current' : ''}">
+                <td><span class="ranking-rank">${row.rank}</span></td>
+                <td>
+                    <div style="font-weight:bold;color:var(--text-main);">${playerName}${isCurrent ? '（あなた）' : ''}</div>
+                    <div style="font-size:11px;color:var(--text-sub);">${escapeHtml(row.email || '')}</div>
+                </td>
+                <td style="font-weight:bold;">${formatYen(row.totalAssets)}</td>
+                <td>${formatYen(row.cash)}</td>
+                <td class="ranking-reward">${reward ? formatYen(reward) : '-'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.refreshTotalAssetRanking = async function({ applyRewards = false } = {}) {
+    if (!currentUser) return [];
+
+    const body = document.getElementById('ranking-body');
+    if (body) {
+        body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:32px;">ランキングを更新中...</td></tr>';
+    }
+
+    try {
+        const snap = await get(dbRef(db, 'stock_users'));
+        const users = snap.exists() ? snap.val() : {};
+
+        if (!users[currentUser.uid]) {
+            users[currentUser.uid] = {
+                username: currentUsername,
+                email: currentUser.email,
+                balance,
+                holdings,
+            };
+        }
+
+        const rows = Object.entries(users).map(([uid, data]) => ({
+            uid,
+            username: data?.username || '',
+            email: data?.email || '',
+            cash: Number(data?.balance) || 0,
+            totalAssets: calculateTotalAssetsForUser(data),
+        }))
+        .sort((a, b) => b.totalAssets - a.totalAssets || a.uid.localeCompare(b.uid))
+        .map((row, index) => ({ ...row, rank: index + 1 }));
+
+        renderTotalAssetRanking(rows);
+
+        const currentRow = rows.find(row => row.uid === currentUser.uid);
+        if (currentRow) {
+            update(dbRef(db, `rankings/totalAssets/${currentUser.uid}`), {
+                uid: currentUser.uid,
+                username: currentUsername || currentUser.email,
+                email: currentUser.email,
+                totalAssets: currentRow.totalAssets,
+                rank: currentRow.rank,
+                updatedAt: Date.now(),
+            }).catch(e => console.warn('Ranking snapshot save failed:', e.message));
+
+            if (applyRewards) {
+                const rewarded = await applyDailyRankingReward(currentRow.rank);
+                if (rewarded) return refreshTotalAssetRanking({ applyRewards: false });
+            }
+        }
+
+        return rows;
+    } catch (e) {
+        console.warn('Ranking refresh failed:', e.message);
+        if (body) {
+            body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#f87171;padding:32px;">ランキングの読み込みに失敗しました</td></tr>';
+        }
+        return [];
+    }
+};
 
 /* ─── 税金徴収システム ─── */
 function checkAndApplyTax() {
@@ -2382,6 +2642,7 @@ function showGameTab(tab) {
     document.getElementById(`tab-${tab}`).classList.add('active');
 
     if (tab === 'portfolio') updatePortfolio();
+    if (tab === 'ranking') refreshTotalAssetRanking({ applyRewards: true });
     if (tab === 'settings') window.initSettingsTab();
 }
 
@@ -3309,6 +3570,8 @@ window.addPlayer = async function() {
             holdings: {},
             history: {},
             lastBonusDate: null,
+            lastRankingRewardDate: null,
+            lastRankingRewardRank: null,
         });
         
         showToast(`✅ プレイヤー ${email} を追加しました`, 'success');
@@ -4497,6 +4760,7 @@ window.executeInlineTrade = async function(mode, stockId, qty) {
     updateBalanceDisplay();
     showToast(mode === 'buy' ? '購入しました' : '売却しました', 'success');
     updatePortfolio();
+    refreshTotalAssetRanking({ applyRewards: false });
     renderMarket();
     if (selectedStockId) renderStockDetail(selectedStockId);
 };
