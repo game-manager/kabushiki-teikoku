@@ -3716,20 +3716,34 @@ async function initMarket() {
     allStocks = [...FAMOUS_STOCKS];
  
     // 初回読み込み時にリアル株価を取得（マーケットリーダー以外でも表示用に一度取得）
-    let initialRealPrices = null;
-    try {
-        initialRealPrices = await fetchRealStockPrices();
-    } catch (e) {
-        console.warn('Initial real price fetch failed:', e.message);
-    }
-
     FAMOUS_STOCKS.forEach(s => {
         if (!stockPrices[s.id]) {
-            stockPrices[s.id] = (initialRealPrices && initialRealPrices[s.id]) ? initialRealPrices[s.id] : s.basePrice;
+            stockPrices[s.id] = s.basePrice;
             priceHistory[s.id] = Array(40).fill(stockPrices[s.id]).map((p) =>
                 Math.round(p + (Math.random() - 0.5) * p * 0.02)
             );
         }
+    });
+
+    renderMarket();
+    fetchRealStockPricesOnce().then((initialRealPrices) => {
+        let changed = false;
+        FAMOUS_STOCKS.forEach(s => {
+            const realPrice = initialRealPrices && initialRealPrices[s.id];
+            if (!realPrice || stockPrices[s.id] === realPrice) return;
+            stockPrices[s.id] = realPrice;
+            if (!Array.isArray(priceHistory[s.id])) priceHistory[s.id] = [];
+            priceHistory[s.id].push(realPrice);
+            if (priceHistory[s.id].length > 60) priceHistory[s.id].shift();
+            changed = true;
+        });
+        if (changed) {
+            renderMarket();
+            updatePortfolio();
+            if (selectedStockId) renderStockDetail(selectedStockId);
+        }
+    }).catch((e) => {
+        console.warn('Initial real price fetch failed:', e.message);
     });
  
     await loadPublicCompanies();
@@ -3926,7 +3940,23 @@ const TICKER_MAP = {
 };
 
 let lastRealPriceFetch = 0;
+let realPriceFetchInFlight = null;
 const REAL_PRICE_FETCH_INTERVAL = 60 * 1000; // 1分ごとに取得
+
+async function fetchRealStockPricesOnce() {
+    if (realPriceFetchInFlight) return realPriceFetchInFlight;
+
+    realPriceFetchInFlight = fetchRealStockPrices()
+        .then((prices) => {
+            lastRealPriceFetch = Date.now();
+            return prices;
+        })
+        .finally(() => {
+            realPriceFetchInFlight = null;
+        });
+
+    return realPriceFetchInFlight;
+}
 
 async function fetchRealStockPrices() {
     const tickers = Object.values(TICKER_MAP);
@@ -3975,14 +4005,14 @@ async function tickSharedMarketAsLeader() {
     const stateRef = dbRef(db, 'market/state');
     try {
         const snap = await get(stateRef);
-        const state = buildInitialMarketState(snap.exists() ? snap.val() : {});
-        if (state.updatedAt && now - state.updatedAt < 1000) return;
+        const rawState = snap.exists() ? snap.val() : null;
+        const state = buildInitialMarketState(rawState || {});
+        if (rawState && rawState.updatedAt && now - rawState.updatedAt < 1000) return;
         
         // リアル株価の取得
         let realPrices = null;
-        if (now - lastRealPriceFetch > REAL_PRICE_FETCH_INTERVAL) {
-            realPrices = await fetchRealStockPrices();
-            lastRealPriceFetch = now;
+        if (rawState && !realPriceFetchInFlight && now - lastRealPriceFetch > REAL_PRICE_FETCH_INTERVAL) {
+            realPrices = await fetchRealStockPricesOnce();
             console.log('Real prices fetched:', realPrices);
         }
 
