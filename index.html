@@ -273,6 +273,13 @@
             cursor: pointer; margin-top: 8px; transition: all 0.2s;
         }
         .auth-btn:hover { background: linear-gradient(135deg, var(--accent-hover), var(--accent)); }
+        .auth-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        .auth-btn:disabled:hover {
+            background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+        }
         .auth-toggle {
             text-align: center; margin-top: 16px;
             color: var(--text-sub); font-size: 13px;
@@ -283,6 +290,55 @@
         #auth-error {
             color: var(--negative); font-size: 12px;
             text-align: center; margin-top: 10px; min-height: 18px;
+        }
+        .terms-box {
+            display: none;
+            margin: 4px 0 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-input);
+            overflow: hidden;
+        }
+        .terms-title {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: bold;
+        }
+        .terms-content {
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 12px 14px;
+            color: var(--text-sub);
+            font-size: 12px;
+            line-height: 1.7;
+        }
+        .terms-content p { margin-bottom: 10px; }
+        .terms-content ul {
+            padding-left: 18px;
+        }
+        .terms-read-note {
+            padding: 8px 12px;
+            border-top: 1px solid var(--border);
+            color: var(--accent);
+            font-size: 11px;
+        }
+        .terms-agree {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 10px 12px 12px;
+            color: var(--text-main);
+            font-size: 12px;
+            line-height: 1.5;
+            cursor: pointer;
+        }
+        .terms-agree input {
+            margin-top: 2px;
+        }
+        .terms-agree input:disabled + span {
+            color: var(--text-sub);
         }
  
         /* ─── メイン画面 ─── */
@@ -1249,6 +1305,26 @@
             <label>パスワード</label>
             <input type="password" id="auth-password" placeholder="••••••••">
         </div>
+
+        <div class="terms-box" id="terms-box">
+            <div class="terms-title">利用規約</div>
+            <div class="terms-content" id="terms-content" tabindex="0">
+                <p>株式帝国を利用する前に、以下の内容を最後まで読んでください。</p>
+                <ul>
+                    <li>授業中、学習活動中、または先生・学校が禁止している場面での使用は禁止です。</li>
+                    <li>不正行為、荒らし、なりすまし、バグの悪用、他人のアカウント利用は禁止です。</li>
+                    <li>株式帝国では、予告なくメンテナンス、機能停止、データ修正、UIやルールの変更を行うことがあります。</li>
+                    <li>管理者は安全運営と秩序維持のため、アカウント制限、データ調整、投稿や名称の修正、その他必要と判断した対応を行うことがあります。</li>
+                    <li>ゲーム内の資産や成績は娯楽用のものであり、現実の金融取引や投資助言ではありません。</li>
+                    <li>この規約を守れない場合、登録後でも利用を制限されることがあります。</li>
+                </ul>
+            </div>
+            <div class="terms-read-note" id="terms-read-note">最後までスクロールすると同意できます。</div>
+            <label class="terms-agree">
+                <input type="checkbox" id="terms-agree" disabled>
+                <span>利用規約を最後まで読み、内容に同意します</span>
+            </label>
+        </div>
         
         <div id="auth-error"></div>
         <button class="auth-btn" id="auth-btn" onclick="handleAuth()">ログイン</button>
@@ -2069,6 +2145,39 @@ const TUTORIAL_STEPS = [
 ];
  
 /* ─── Firebase認証 ─── */
+function hasReadTermsToEnd() {
+    const termsContent = document.getElementById('terms-content');
+    return termsContent.scrollTop + termsContent.clientHeight >= termsContent.scrollHeight - 4;
+}
+
+function resetTermsAgreement() {
+    const agree = document.getElementById('terms-agree');
+    const note = document.getElementById('terms-read-note');
+    const termsContent = document.getElementById('terms-content');
+
+    termsContent.scrollTop = 0;
+    agree.checked = false;
+    agree.disabled = true;
+    note.textContent = '最後までスクロールすると同意できます。';
+}
+
+function updateAuthButtonState() {
+    const authBtn = document.getElementById('auth-btn');
+    const agree = document.getElementById('terms-agree');
+
+    authBtn.disabled = !isLoginMode && !agree.checked;
+}
+
+function handleTermsScroll() {
+    const agree = document.getElementById('terms-agree');
+    const note = document.getElementById('terms-read-note');
+
+    if (hasReadTermsToEnd()) {
+        agree.disabled = false;
+        note.textContent = '内容を確認したらチェックしてください。';
+    }
+}
+
 window.toggleAuthMode = function() {
     isLoginMode = !isLoginMode;
     document.getElementById('auth-btn').textContent = isLoginMode ? 'ログイン' : '新規登録';
@@ -2078,12 +2187,22 @@ window.toggleAuthMode = function() {
         isLoginMode ? '新規登録' : 'ログイン';
     document.getElementById('auth-error').textContent = '';
     document.getElementById('username-group').style.display = isLoginMode ? 'none' : 'block';
+    document.getElementById('terms-box').style.display = isLoginMode ? 'none' : 'block';
+
+    if (!isLoginMode) {
+        resetTermsAgreement();
+    }
+    updateAuthButtonState();
 };
+
+document.getElementById('terms-content').addEventListener('scroll', handleTermsScroll);
+document.getElementById('terms-agree').addEventListener('change', updateAuthButtonState);
  
 window.handleAuth = async function() {
     const email    = document.getElementById('auth-email').value.trim();
     const pass     = document.getElementById('auth-password').value;
     const username = document.getElementById('auth-username').value.trim();
+    const termsAgree = document.getElementById('terms-agree');
     const errEl    = document.getElementById('auth-error');
     errEl.textContent = '';
  
@@ -2092,6 +2211,8 @@ window.handleAuth = async function() {
     if (!isLoginMode) {
         const nameError = validateInputName(username);
         if (nameError) { errEl.textContent = 'ユーザー名: ' + nameError; return; }
+        if (!hasReadTermsToEnd()) { errEl.textContent = '利用規約を最後まで読んでください'; return; }
+        if (!termsAgree.checked) { errEl.textContent = '利用規約に同意してください'; return; }
     }
  
     try {
